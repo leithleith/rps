@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0f2838" />
+    <meta name="description" content="RPS" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>RPS</title>
+  </head>
+  <body>
+    <div class="page-shell" aria-hidden="true"></div>
+    <main class="layout" role="main">
+      <header class="hero" aria-label="En-tête">
+        <div class="header-row">
+          <h1>RPS</h1>
+          <div class="header-actions">
+            <button id="installBtn" class="install-btn" type="button" hidden>
+              Installer l'application
+            </button>
+            <button id="menuHamburger" class="hamburger-btn" type="button" aria-label="Afficher ou masquer le menu" aria-controls="menu" aria-expanded="false">
+              <span aria-hidden="true">☰</span>
+            </button>
+          </div>
+        </div>
+        <nav id="menu" class="menu menu-collapsed" aria-label="Navigation">
+        </nav>
+      </header>
+      <section id="content" class="content-section" aria-live="polite" hidden>
+      </section>
+    </main>
+    <noscript>
+      <p class="no-js">Activez JavaScript pour afficher le menu interactif de l'application.</p>
+    </noscript>
+    <script src="https://cdn.plot.ly/plotly-3.6.0.min.js" defer></script>
+    <script src="app.js" defer></script>
+  </body>
+</html>
