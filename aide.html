@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RPS — Guide d'utilisation complet</title>
+<style>
+  :root {
+    --bg-top: #56B4E9;
+    --bg-bottom: #CC79A7;
+    --ink: #152130;
+    --ink-soft: #43556a;
+    --accent: #0072B2;
+    --line: #0072B240;
+    --panel: #ffffffd9;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    background: linear-gradient(165deg, var(--bg-top) 0%, #ffffff 45%, var(--bg-bottom) 100%);
+    background-attachment: fixed;
+    line-height: 1.5;
+  }
+  .wrap {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 20px 80px;
+  }
+  header.top {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 14px 30px #0072B233;
+  }
+  header.top h1 { margin: 0 0 6px; font-size: 1.9rem; }
+  header.top p { margin: 0; color: var(--ink-soft); }
+  nav.toc {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin-bottom: 24px;
+  }
+  nav.toc h2 { margin-top: 0; font-size: 1.1rem; }
+  nav.toc ol { columns: 2; column-gap: 32px; padding-left: 20px; }
+  nav.toc li { margin-bottom: 6px; break-inside: avoid; }
+  nav.toc a { color: var(--accent); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  section.card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    box-shadow: 0 10px 24px #0072B220;
+  }
+  section.card h2 {
+    margin-top: 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--line);
+  }
+  section.card h3 { color: var(--accent); }
+  section.card h4 { margin-bottom: 6px; }
+  figure {
+    margin: 14px 0 22px;
+    text-align: center;
+  }
+  figure img {
+    max-width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 6px 18px #00000022;
+  }
+  figcaption {
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+    margin-top: 8px;
+    font-style: italic;
+  }
+  code, .path {
+    background: #0072B214;
+    border-radius: 5px;
+    padding: 1px 6px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.92em;
+  }
+  .badge {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 2px 12px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 4px 4px 0;
+  }
+  .badge.b-green { background: #009E73; }
+  .badge.b-yellow { background: #F0E442; color: #444; }
+  .badge.b-orange { background: #E69F00; }
+  .badge.b-red { background: #D55E00; }
+  ul.feature-list { padding-left: 22px; }
+  ul.feature-list li { margin-bottom: 6px; }
+  .scenario {
+    border-left: 4px solid var(--accent);
+    padding: 4px 0 4px 16px;
+    margin: 16px 0;
+    background: #0072B20d;
+    border-radius: 0 8px 8px 0;
+  }
+  .scenario h4 { margin-top: 10px; }
+  .scenario ol { padding-left: 20px; }
+  table.sample-files {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+    font-size: 0.92rem;
+  }
+  table.sample-files th, table.sample-files td {
+    border: 1px solid var(--line);
+    padding: 6px 10px;
+    text-align: left;
+  }
+  table.sample-files th { background: #0072B214; }
+  a.back-top { font-size: 0.85rem; color: var(--accent); text-decoration: none; }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 700px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    nav.toc ol { columns: 1; }
+  }
+  footer {
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 0.85rem;
+    margin-top: 30px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top" id="top">
+  <h1>RPS — Guide d'utilisation complet</h1>
+  <p>Visite guidée complète de l'application : chaque menu, chaque sous-menu, chaque fonctionnalité, et des scénarios pas-à-pas illustrés par des captures d'écran réelles.</p>
+</header>
+
+<nav class="toc">
+  <h2>Sommaire</h2>
+  <ol>
+    <li><a href="#apercu">Aperçu de l'application</a></li>
+    <li><a href="#menu">Le menu de navigation</a></li>
+    <li><a href="#karasek">Menu « Karasek-Siegrist »</a></li>
+    <li><a href="#copsoq">Menu « COPSOQ »</a></li>
+    <li><a href="#rapprochement">Menu « Rapprochement RPS »</a></li>
+    <li><a href="#a-propos">« A propos »</a></li>
+    <li><a href="#github-licence">« GitHub » et « CC BY-NC-ND 4.0 »</a></li>
+    <li><a href="#couleurs">Lecture des couleurs et des scores</a></li>
+    <li><a href="#scenarios">Scénarios pas-à-pas</a></li>
+    <li><a href="#fichiers-exemples">Fichiers exemples utilisés dans ce guide</a></li>
+    <li><a href="#accessibilite">Accessibilité et installation (PWA)</a></li>
+  </ol>
+</nav>
+
+<section class="card" id="apercu">
+  <h2>1. Aperçu de l'application</h2>
+  <p>RPS est une application Web Progressive (PWA) fonctionnant entièrement dans le navigateur, sans envoi de données à un serveur : chaque questionnaire, chaque fichier chargé et chaque calcul reste local à votre poste. Elle permet de :</p>
+  <ul class="feature-list">
+    <li>Répondre en ligne aux questionnaires <strong>Karasek-Siegrist</strong> (version française) et <strong>COPSOQ</strong> (français/anglais) ;</li>
+    <li>Sauvegarder le résultat d'un questionnaire dans un fichier <code>.json</code> téléchargé sur votre poste ;</li>
+    <li>Recharger un ou plusieurs fichiers <code>.json</code> précédemment sauvegardés pour consulter, comparer ou regrouper des résultats (un individu, plusieurs individus, ou plusieurs groupes/lots) ;</li>
+    <li>Visualiser les résultats sous forme de tableaux, de graphiques polaires, de sunburst et de diagrammes de flux (Sankey) ;</li>
+    <li>Faire le <strong>rapprochement</strong> entre les résultats Karasek-Siegrist et COPSOQ au regard des 6 facteurs du rapport « Gollac » (repris par l'INRS) ;</li>
+    <li>Exporter n'importe quel graphique en image PNG et le consulter en plein écran.</li>
+  </ul>
+  <p>Trois grands menus structurent l'application : <strong>Karasek-Siegrist</strong>, <strong>COPSOQ</strong> et <strong>Rapprochement RPS</strong>, chacun avec la même logique de sous-menus : <em>Questionnaire</em>, <em>Importer un fichier</em>, <em>Importer plusieurs fichiers (individus)</em>, <em>Importer plusieurs fichiers (groupe)</em>, <em>Référentiel</em> (le menu Rapprochement RPS remplace les 3 premiers sous-menus par ses propres vues de comparaison).</p>
+</section>
+
+<section class="card" id="menu">
+  <h2>2. Le menu de navigation</h2>
+  <p>Le bouton <strong>☰</strong> en haut à droite de l'en-tête ouvre/ferme le menu.</p>
+  <figure>
+    <img src="docs/screenshots/header-closed.png" alt="En-tête de l'application, menu fermé" />
+    <figcaption>En-tête de l'application avec le bouton hamburger (menu fermé).</figcaption>
+  </figure>
+  <figure>
+    <img src="docs/screenshots/menu-open.png" alt="Menu ouvert, sous-menus repliés" />
+    <figcaption>Menu ouvert : 6 entrées (Karasek-Siegrist, COPSOQ, Rapprochement RPS, A propos, GitHub, CC BY-NC-ND 4.0). Les trois premières se déplient au clic pour révéler leur sous-menu.</figcaption>
+  </figure>
+  <figure>
+    <img src="docs/screenshots/menu-open-submenu-expanded.png" alt="Sous-menu Karasek-Siegrist déplié" />
+    <figcaption>Clic sur « Karasek-Siegrist » : le sous-menu se déplie et affiche ses 5 entrées.</figcaption>
+  </figure>
+  <p>Sur un écran large, le menu s'élargit pour que chaque libellé de sous-menu tienne sur le moins de lignes possible ; sur mobile, il occupe toute la largeur de l'écran.</p>
+</section>
+
+<section class="card" id="karasek">
+  <h2>3. Menu « Karasek-Siegrist »</h2>
+  <p>Regroupe tout ce qui concerne le questionnaire Karasek-Siegrist (version française), organisé en 4 catégories : <em>Niveau des Exigences</em>, <em>Degré d'Autonomie et équilibre vie privée / vie professionnelle</em>, <em>Niveau de Soutien (collègues et manager)</em>, <em>Reconnaissance au travail</em>.</p>
+
+  <h3 id="karasek-questionnaire">3.1 « Questionnaire »</h3>
+  <p>Affiche le questionnaire complet, organisé par catégorie. Une fois toutes les questions répondues, un bouton permet de calculer et sauvegarder le résultat (fichier <code>.json</code> téléchargé, nommé <span class="path">questionnaire-karasek-siegrist-&lt;horodatage&gt;.json</span>).</p>
+  <figure>
+    <img src="docs/screenshots/karasek-questionnaire.png" alt="Questionnaire Karasek-Siegrist" />
+    <figcaption>Le questionnaire Karasek-Siegrist, prêt à être rempli.</figcaption>
+  </figure>
+
+  <h3 id="karasek-importer-un-fichier">3.2 « Importer un fichier »</h3>
+  <p>Ouvre un sélecteur de fichier pour recharger <strong>un seul</strong> résultat <code>.json</code> précédemment sauvegardé. La page affiche alors :</p>
+  <ul class="feature-list">
+    <li>le détail des réponses, regroupées par catégorie, avec un bandeau de couleur par catégorie ;</li>
+    <li>le score brut (0 à 36) de chaque catégorie et sa couleur selon l'échelle à 4 niveaux <span class="badge b-green">vert</span><span class="badge b-yellow">jaune</span><span class="badge b-orange">orange</span><span class="badge b-red">rouge</span> (la même échelle que celle utilisée partout ailleurs dans l'application pour COPSOQ) ;</li>
+    <li>une classification globale en 4 zones (« Travail protecteur pour la santé », « Zone d'attention », « Zone d'alerte », « Travail dangereux pour la santé ») et une visualisation 3D des scores par zone.</li>
+  </ul>
+  <figure>
+    <img src="docs/screenshots/karasek-single-result.png" alt="Résultat individuel Karasek-Siegrist" />
+    <figcaption>Résultat d'un import individuel : détail des réponses par catégorie, scores et couleurs.</figcaption>
+  </figure>
+
+  <h3 id="karasek-importer-plusieurs-individus">3.3 « Importer plusieurs fichiers (individus) »</h3>
+  <p>Permet de charger plusieurs fichiers <code>.json</code> à la fois (et d'en ajouter d'autres par la suite) pour comparer plusieurs personnes : un tracé par individu, une table de statistiques (moyenne / médiane / minimum / maximum) par catégorie, et une répartition du nombre d'individus par zone.</p>
+  <figure>
+    <img src="docs/screenshots/karasek-multi-individus-result.png" alt="Comparaison multi-individus Karasek-Siegrist" />
+    <figcaption>4 fichiers chargés : statistiques de groupe, répartition par zone et visualisation 3D superposant les 4 individus.</figcaption>
+  </figure>
+
+  <h3 id="karasek-importer-groupe">3.4 « Importer plusieurs fichiers (groupe) »</h3>
+  <p>Comme ci-dessus, mais tous les individus sont fusionnés dans une seule et même trace de groupe (au lieu d'un tracé par individu), pour visualiser l'ensemble comme une seule population.</p>
+  <figure>
+    <img src="docs/screenshots/karasek-groupe-result.png" alt="Résultat groupe Karasek-Siegrist" />
+    <figcaption>Vue « groupe » : les mêmes fichiers, agrégés en une seule population.</figcaption>
+  </figure>
+
+  <h3 id="karasek-referentiel">3.5 « Référentiel »</h3>
+  <p>Une page de liens de référence (rapport « Gollac », INRS, ANACT) pour resituer le questionnaire Karasek-Siegrist dans son cadre théorique.</p>
+  <figure>
+    <img src="docs/screenshots/karasek-referentiel.png" alt="Référentiel Karasek-Siegrist" />
+    <figcaption>Liens vers les sources et références officielles.</figcaption>
+  </figure>
+</section>
+
+<section class="card" id="copsoq">
+  <h2>4. Menu « COPSOQ »</h2>
+  <p>Structure identique au menu Karasek-Siegrist, pour le questionnaire COPSOQ (disponible en français et en anglais). Les résultats COPSOQ sont organisés en <strong>Domaines</strong>, eux-mêmes composés d'<strong>Échelles</strong>.</p>
+
+  <h3 id="copsoq-questionnaire">4.1 « Questionnaire »</h3>
+  <figure>
+    <img src="docs/screenshots/copsoq-questionnaire.png" alt="Questionnaire COPSOQ" />
+    <figcaption>Le questionnaire COPSOQ, avec sélecteur de langue et progression.</figcaption>
+  </figure>
+
+  <h3 id="copsoq-importer-un-fichier">4.2 « Importer un fichier / Import a file »</h3>
+  <p>Recharge un résultat COPSOQ individuel et affiche :</p>
+  <ul class="feature-list">
+    <li>un <strong>sunburst</strong> (graphique en anneaux concentriques) : l'anneau intérieur représente les Domaines, l'anneau extérieur les Échelles, chacun coloré selon son score (échelle à 4 couleurs Okabe-Ito, pleine opacité pour les deux anneaux) ;</li>
+    <li>les réponses détaillées, regroupées par Domaine puis par Échelle.</li>
+  </ul>
+  <figure>
+    <img src="docs/screenshots/copsoq-single-result.png" alt="Résultat individuel COPSOQ avec sunburst" />
+    <figcaption>Résultat individuel COPSOQ : graphique sunburst Domaines/Échelles et détail des réponses.</figcaption>
+  </figure>
+
+  <h3 id="copsoq-importer-plusieurs-individus">4.3 « Importer plusieurs fichiers (individus) / Import multiple files (individuals) »</h3>
+  <figure>
+    <img src="docs/screenshots/copsoq-multi-individus-result.png" alt="Comparaison multi-individus COPSOQ" />
+    <figcaption>Comparaison de 4 résultats COPSOQ : un tracé polaire par personne et statistiques de groupe.</figcaption>
+  </figure>
+
+  <h3 id="copsoq-importer-groupe">4.4 « Importer plusieurs fichiers (groupe) / Import multiple files (group) »</h3>
+  <figure>
+    <img src="docs/screenshots/copsoq-groupe-result.png" alt="Résultat groupe COPSOQ" />
+    <figcaption>Vue « groupe » COPSOQ : les fichiers fusionnés en une seule population.</figcaption>
+  </figure>
+
+  <h3 id="copsoq-referentiel">4.5 « Référentiel »</h3>
+  <figure>
+    <img src="docs/screenshots/copsoq-referentiel.png" alt="Référentiel COPSOQ" />
+    <figcaption>Liens de référence COPSOQ (COPSOQ Network, versions FR/EN, licences).</figcaption>
+  </figure>
+</section>
+
+<section class="card" id="rapprochement">
+  <h2>5. Menu « Rapprochement RPS »</h2>
+  <p>Ce menu est le cœur analytique de l'application : il met en correspondance les résultats Karasek-Siegrist et COPSOQ au regard des <strong>6 facteurs de risques psychosociaux du rapport « Gollac »</strong> (repris par l'INRS) : Intensité du travail et temps de travail, Exigences émotionnelles, Manque d'autonomie, Rapports sociaux au travail dégradés, Conflits de valeurs, Insécurité de la situation de travail.</p>
+  <p>Toutes les vues de ce menu utilisent le même diagramme de flux (Sankey), organisé en 4 colonnes : <strong>Échelles COPSOQ → Domaines COPSOQ → Facteurs Gollac/INRS → Dimensions Karasek-Siegrist</strong>. Survoler un lien ou une étiquette met en évidence l'intégralité du chemin correspondant (en amont comme en aval).</p>
+
+  <h3 id="rapprochement-individuel">5.1 « Rapprochement RPS individuel »</h3>
+  <p>Chargez un résultat Karasek-Siegrist et/ou un résultat COPSOQ (les deux ne sont pas obligatoires) pour voir :</p>
+  <ul class="feature-list">
+    <li>le diagramme Sankey, chaque nœud coloré selon son score (échelle Okabe-Ito à 4 couleurs) ; les éléments sans donnée restent gris ;</li>
+    <li>le tableau « Comparaison des scores » : un facteur Gollac/INRS par ligne, avec le score Karasek-Siegrist, le score COPSOQ et l'écart entre les deux.</li>
+  </ul>
+  <figure>
+    <img src="docs/screenshots/rapprochement-individuel-result.png" alt="Rapprochement RPS individuel avec les deux fichiers chargés" />
+    <figcaption>Un fichier Karasek-Siegrist et un fichier COPSOQ chargés : Sankey coloré par score et tableau de comparaison rempli.</figcaption>
+  </figure>
+
+  <h3 id="rapprochement-multi-individus">5.2 « Rapprochement RPS de plusieurs individus »</h3>
+  <p>Comme ci-dessus, mais les scores affichés sont la moyenne calculée sur l'ensemble des fichiers Karasek-Siegrist et/ou COPSOQ chargés (vous pouvez ajouter des fichiers à plusieurs reprises).</p>
+  <figure>
+    <img src="docs/screenshots/rapprochement-multi-individus-result.png" alt="Rapprochement RPS de plusieurs individus" />
+    <figcaption>Plusieurs fichiers de chaque questionnaire chargés : les scores sont moyennés.</figcaption>
+  </figure>
+
+  <h3 id="rapprochement-groupes">5.3 « Rapprochement RPS de groupes »</h3>
+  <p>Chaque clic sur « Ajouter un groupe... » crée un nouveau <strong>lot</strong> (Lot 1, Lot 2, ...), avec ses propres statistiques. Contrairement aux autres vues, le diagramme Sankey n'est <strong>pas</strong> affiché automatiquement au chargement : cliquez sur le repère coloré d'un lot dans le tableau « Comparaison des groupes » pour afficher son diagramme.</p>
+  <figure>
+    <img src="docs/screenshots/rapprochement-groupes-before-click.png" alt="Rapprochement RPS de groupes, avant clic sur un repère" />
+    <figcaption>Deux lots chargés : le tableau de comparaison est rempli, mais aucun diagramme n'est encore affiché.</figcaption>
+  </figure>
+  <p>Après un clic sur le repère coloré d'un lot, son diagramme Sankey apparaît : les liens reprennent la couleur du lot (pour l'identifier facilement), tandis que les étiquettes des nœuds restent colorées selon le score de ce lot.</p>
+  <figure>
+    <img src="docs/screenshots/rapprochement-groupes-lot-sankey.png" alt="Diagramme Sankey d'un lot après clic" />
+    <figcaption>Diagramme Sankey affiché après un clic sur le repère du « Lot 1 » : liens couleur du lot, étiquettes colorées selon le score.</figcaption>
+  </figure>
+
+  <h3 id="rapprochement-referentiel">5.4 « Référentiel »</h3>
+  <p>Le diagramme Sankey « à vide » (structure complète, sans donnée chargée), qui sert de plan de référence : chaque colonne (Échelles, Domaines, Facteurs Gollac/INRS, Dimensions Karasek-Siegrist) est colorée uniformément avec une couleur de la palette Paul Tol muted, tout comme les liens entre chaque paire de colonnes.</p>
+  <figure>
+    <img src="docs/screenshots/rapprochement-referentiel.png" alt="Référentiel Rapprochement RPS" />
+    <figcaption>Structure complète du Sankey de référence, sans donnée chargée.</figcaption>
+  </figure>
+</section>
+
+<section class="card" id="a-propos">
+  <h2>6. « A propos »</h2>
+  <p>Rappelle l'objet de l'application, les sources (Karasek-Siegrist, COPSOQ, rapport « Gollac », ANACT), les bibliothèques utilisées (Plotly.js) et les palettes de couleurs accessibles (Okabe-Ito, Paul Tol muted), ainsi que les licences (contenu sous CC BY-NC-ND 4.0, code sous licence MIT).</p>
+  <figure>
+    <img src="docs/screenshots/a-propos.png" alt="Page A propos" />
+    <figcaption>La page « A propos ».</figcaption>
+  </figure>
+</section>
+
+<section class="card" id="github-licence">
+  <h2>7. « GitHub » et « CC BY-NC-ND 4.0 »</h2>
+  <p>Ces deux entrées de menu n'ouvrent pas de page interne : elles ouvrent, dans un nouvel onglet, respectivement le dépôt de code source de l'application sur GitHub et le texte complet de la licence Creative Commons BY-NC-ND 4.0 sous laquelle le contenu est publié.</p>
+</section>
+
+<section class="card" id="couleurs">
+  <h2>8. Lecture des couleurs et des scores</h2>
+  <p>Toutes les échelles de score de l'application (0 à 100 pour les facteurs Gollac/INRS et les échelles/domaines COPSOQ ; 0 à 36 pour les catégories Karasek-Siegrist) utilisent la même palette de 4 couleurs, choisie pour rester lisible en cas de daltonisme (palette Okabe-Ito) :</p>
+  <p>
+    <span class="badge b-green">Vert #009E73</span> situation favorable/protectrice —
+    <span class="badge b-yellow">Jaune #F0E442</span> zone d'attention —
+    <span class="badge b-orange">Orange #E69F00</span> zone à risque —
+    <span class="badge b-red">Rouge/orange foncé #D55E00</span> situation la plus défavorable
+  </p>
+  <p>Pour les <strong>dimensions Karasek-Siegrist</strong> affichées dans les diagrammes Sankey du menu « Rapprochement RPS », le classement en 4 niveaux se fait par quart strict (25 points chacun sur une échelle 0-100), pour rester cohérent avec les 4 quartiles (0-9/10-18/19-27/28-36) utilisés sur les pages de résultats bruts Karasek-Siegrist.</p>
+  <p>Le gris <code>#9aa5b1</code> indique, dans les diagrammes Sankey de « Rapprochement RPS », un élément pour lequel aucune donnée n'a été chargée.</p>
+  <p>Dans le diagramme Sankey de « Référentiel » (structure vide), les couleurs ne représentent pas un score mais uniquement la colonne d'appartenance (palette Paul Tol muted, une couleur par colonne et par type de lien).</p>
+</section>
+
+<section class="card" id="scenarios">
+  <h2>9. Scénarios pas-à-pas</h2>
+
+  <div class="scenario">
+    <h4>Scénario A — Répondre au questionnaire et sauvegarder son résultat</h4>
+    <ol>
+      <li>Ouvrez le menu, puis <strong>Karasek-Siegrist → Questionnaire</strong> (ou <strong>COPSOQ → Questionnaire</strong>).</li>
+      <li>Répondez à toutes les questions.</li>
+      <li>Cliquez sur le bouton de sauvegarde en bas du questionnaire : un fichier <code>.json</code> est téléchargé sur votre poste (dossier « Téléchargements » par défaut).</li>
+      <li>Conservez ce fichier : il pourra être rechargé plus tard dans n'importe laquelle des vues « Importer... » ou « Rapprochement RPS ».</li>
+    </ol>
+  </div>
+
+  <div class="scenario">
+    <h4>Scénario B — Consulter un résultat individuel déjà sauvegardé</h4>
+    <ol>
+      <li>Menu <strong>Karasek-Siegrist → Importer un fichier</strong> (ou <strong>COPSOQ → Importer un fichier</strong>).</li>
+      <li>Sélectionnez votre fichier <code>.json</code> dans la boîte de dialogue.</li>
+      <li>Les scores, couleurs et graphiques s'affichent immédiatement.</li>
+    </ol>
+  </div>
+
+  <div class="scenario">
+    <h4>Scénario C — Comparer plusieurs collaborateurs</h4>
+    <ol>
+      <li>Menu <strong>Karasek-Siegrist → Importer plusieurs fichiers (individus)</strong> (ou l'équivalent COPSOQ).</li>
+      <li>Sélectionnez plusieurs fichiers <code>.json</code> en une seule fois (maintenez <kbd>Ctrl</kbd> ou <kbd>Shift</kbd> enfoncé dans la boîte de dialogue pour une sélection multiple).</li>
+      <li>Le tableau de statistiques (moyenne/médiane/min/max) et les graphiques se mettent à jour.</li>
+      <li>Vous pouvez recommencer l'opération : les nouveaux fichiers viennent s'ajouter à ceux déjà chargés.</li>
+    </ol>
+  </div>
+
+  <div class="scenario">
+    <h4>Scénario D — Comparer plusieurs groupes/lots</h4>
+    <ol>
+      <li>Menu <strong>Karasek-Siegrist → Importer plusieurs fichiers (groupe)</strong> (ou COPSOQ, ou <strong>Rapprochement RPS → Rapprochement RPS de groupes</strong>).</li>
+      <li>Chaque clic sur le bouton d'ajout et sélection de fichiers crée un nouveau lot (« Lot 1 », « Lot 2 », etc.).</li>
+      <li>Le tableau de comparaison des groupes se met à jour à chaque nouveau lot.</li>
+      <li>(Vue « Rapprochement RPS de groupes » uniquement) cliquez sur le repère coloré d'un lot pour afficher son diagramme Sankey détaillé.</li>
+    </ol>
+  </div>
+
+  <div class="scenario">
+    <h4>Scénario E — Croiser Karasek-Siegrist et COPSOQ pour une même personne</h4>
+    <ol>
+      <li>Menu <strong>Rapprochement RPS → Rapprochement RPS individuel</strong>.</li>
+      <li>Chargez le résultat Karasek-Siegrist de la personne, puis son résultat COPSOQ (l'ordre n'a pas d'importance, et un seul des deux suffit pour afficher un résultat partiel).</li>
+      <li>Consultez le diagramme Sankey (survolez un nœud ou un lien pour suivre tout le chemin associé) et le tableau « Comparaison des scores » (colonne « Écart » = différence entre les deux questionnaires).</li>
+    </ol>
+  </div>
+
+  <div class="scenario">
+    <h4>Scénario F — Exporter un graphique en image ou le consulter en plein écran</h4>
+    <ol>
+      <li>Sur n'importe quel graphique Plotly de l'application, une barre d'outils apparaît en survolant le coin supérieur droit du graphique.</li>
+      <li>L'icône appareil photo télécharge une image PNG du graphique.</li>
+      <li>L'icône plein écran (coins) bascule le graphique en mode plein écran pour une lecture plus confortable.</li>
+    </ol>
+  </div>
+</section>
+
+<section class="card" id="fichiers-exemples">
+  <h2>10. Fichiers exemples utilisés dans ce guide</h2>
+  <p>Les captures d'écran ci-dessus ont été réalisées avec des fichiers de résultats réels préalablement sauvegardés (dossier Téléchargements), afin d'illustrer des cas d'usage réalistes :</p>
+  <table class="sample-files">
+    <thead><tr><th>Rôle dans le guide</th><th>Fichier(s)</th></tr></thead>
+    <tbody>
+      <tr><td>Import individuel Karasek-Siegrist</td><td><code>questionnaire-karasek-siegrist-1786550140260.json</code></td></tr>
+      <tr><td>Import individuel COPSOQ</td><td><code>questionnaire-copsoq-sauvegarde1786550384004.json</code></td></tr>
+      <tr><td>Multi-individus Karasek-Siegrist (4 fichiers)</td><td><code>questionnaire-karasek-siegrist-1786550140260.json</code>, <code>...1786378891166.json</code>, <code>...1786378892787.json</code>, <code>...1786378170073.json</code></td></tr>
+      <tr><td>Multi-individus COPSOQ (4 fichiers)</td><td><code>questionnaire-copsoq-sauvegarde1786550384004.json</code>, <code>...1786378298773.json</code>, <code>...1786378334529.json</code>, <code>...1786378272129.json</code></td></tr>
+      <tr><td>Groupes / lots (2 lots de 2 fichiers chacun)</td><td>Karasek-Siegrist : Lot 1 = <code>...1786550140260.json</code> + <code>...1786378891166.json</code> ; Lot 2 = <code>...1786378892787.json</code> + <code>...1786378170073.json</code><br/>COPSOQ : Lot 1 = <code>...1786550384004.json</code> + <code>...1786378298773.json</code> ; Lot 2 = <code>...1786378334529.json</code> + <code>...1786378272129.json</code></td></tr>
+    </tbody>
+  </table>
+  <p>Vous pouvez utiliser vos propres fichiers <code>.json</code> exportés depuis les pages « Questionnaire » de la même façon.</p>
+</section>
+
+<section class="card" id="accessibilite">
+  <h2>11. Accessibilité et installation (PWA)</h2>
+  <ul class="feature-list">
+    <li><strong>Application installable</strong> : un bouton d'installation apparaît dans l'en-tête sur les navigateurs compatibles, pour ajouter RPS comme application sur votre appareil (fonctionnement hors-ligne une fois installée).</li>
+    <li><strong>Palettes daltonisme-friendly</strong> : Okabe-Ito pour les scores, Paul Tol muted pour les éléments structurels — testées pour rester distinguables pour les principaux types de daltonisme.</li>
+    <li><strong>Menu responsive</strong> : s'adapte à la largeur d'écran disponible (bureau large, tablette, mobile).</li>
+    <li><strong>Focus clavier</strong> : tous les liens et boutons du menu affichent un contour visible au focus clavier.</li>
+  </ul>
+</section>
+
+<footer>
+  <p><a class="back-top" href="#top">↑ Haut de page</a></p>
+  <p>Contenu sous licence <a href="https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.fr" target="_blank" rel="noopener noreferrer">CC BY-NC-ND 4.0</a> — Code sous licence <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener noreferrer">MIT</a>.</p>
+</footer>
+
+</div>
+</body>
+</html>

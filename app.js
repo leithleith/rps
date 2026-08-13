@@ -20,7 +20,20 @@ const menuData = [
     ],
   },
   {
+    label: "Rapprochement RPS",
+    submenu: [
+      "Rapprochement RPS individuel",
+      "Rapprochement RPS de plusieurs individus",
+      "Rapprochement RPS de groupes",
+      "Référentiel",
+    ],
+  },
+  {
     label: "A propos",
+    submenu: [],
+  },
+  {
+    label: "Aide",
     submenu: [],
   },
   {
@@ -35,6 +48,7 @@ const menuData = [
 const externalMenuLinks = {
   github: "https://github.com/mattru_microsoft/RPS",
   "cc-by-nc-nd-4-0": "https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.en",
+  aide: "aide.html",
 };
 const menuRoot = document.getElementById("menu");
 const contentRoot = document.getElementById("content");
@@ -51,7 +65,14 @@ let copsoqImportedGroupBatches = [];
 let copsoqImportSingleInput = null;
 let copsoqImportIndividualsInput = null;
 let copsoqImportGroupInput = null;
+let rpsMultiKarasekFiles = [];
+let rpsMultiCopsoqFiles = [];
+let rpsMultiKarasekBatches = []; // { type: 'karasek', label, fileNames, color } - single entry, grown as files are added
+let rpsMultiCopsoqBatches = []; // { type: 'copsoq', label, fileNames, color }
+let rpsGroupEntries = []; // { type: 'karasek' | 'copsoq', label, fileNames, stats, color }
 const plotLineColors = ["#0072B2", "#CC79A7", "#56B4E9", "#882255", "#332288"];
+// Paul Tol muted qualitative palette: https://sronpersonalpages.nl/~pault/#sec:colour_blindness
+const paulTolMutedColors = ["#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#CC6677", "#882255", "#AA4499"];
 const plotImageExportIcon = {
   width: 24,
   height: 24,
@@ -311,8 +332,8 @@ const karasekCategoryScoreRanges = [
 const karasekZoneColors = {
   "Travail protecteur pour la santé": "#009E73",
   "Zone d'attention": "#F0E442",
-  "Zone d'alerte": "#D55E00",
-  "Travail dangereux pour la santé": "#000000",
+  "Zone d'alerte": "#E69F00",
+  "Travail dangereux pour la santé": "#D55E00",
 };
 const karasekZoneRules = {
   "Travail protecteur pour la santé": [
@@ -736,11 +757,11 @@ function getKarasekCategoryScaleColor(category, score) {
   if (category === "Niveau des Exigences") {
     if (band === "0-9") return "#009E73";
     if (band === "10-18") return "#F0E442";
-    if (band === "19-27") return "#D55E00";
-    return "#000000";
+    if (band === "19-27") return "#E69F00";
+    return "#D55E00";
   }
-  if (band === "0-9") return "#000000";
-  if (band === "10-18") return "#D55E00";
+  if (band === "0-9") return "#D55E00";
+  if (band === "10-18") return "#E69F00";
   if (band === "19-27") return "#F0E442";
   return "#009E73";
 }
@@ -1872,6 +1893,34 @@ function openContent(contentId, activeLink) {
     return;
   }
 
+  if (contentId === "rapprochement-rps-rapprochement-rps-individuel") {
+    renderRpsGollacIndividualView();
+    setActiveMenuLink(activeLink);
+    scrollToPageTop();
+    return;
+  }
+
+  if (contentId === "rapprochement-rps-rapprochement-rps-de-plusieurs-individus") {
+    renderRpsGollacMultiIndividualsView();
+    setActiveMenuLink(activeLink);
+    scrollToPageTop();
+    return;
+  }
+
+  if (contentId === "rapprochement-rps-rapprochement-rps-de-groupes") {
+    renderRpsGollacGroupsView();
+    setActiveMenuLink(activeLink);
+    scrollToPageTop();
+    return;
+  }
+
+  if (contentId === "rapprochement-rps-referentiel") {
+    renderRpsGollacReferentielView();
+    setActiveMenuLink(activeLink);
+    scrollToPageTop();
+    return;
+  }
+
   const data = contentData[contentId];
   if (!data || !contentRoot) {
     return;
@@ -2023,6 +2072,1622 @@ function createMenuItem(entry) {
 
   item.append(button, submenu);
   return item;
+}
+
+// --- Rapprochement RPS (Gollac / INRS) : Karasek-Siegrist / COPSOQ ---
+
+const rpsGollacAxes = [
+  "Intensité du travail et temps de travail",
+  "Exigences émotionnelles",
+  "Manque d'autonomie",
+  "Rapports sociaux au travail dégradés",
+  "Conflits de valeurs",
+  "Insécurité de la situation de travail",
+];
+
+// Axe Gollac/INRS attribué par défaut à chaque catégorie du questionnaire Karasek-Siegrist.
+const karasekAxisByCategory = {
+  "Niveau des Exigences": "Intensité du travail et temps de travail",
+  "Degré d'Autonomie et équilibre vie privée / vie professionnelle": "Manque d'autonomie",
+  "Niveau de Soutien (collègues et manager)": "Rapports sociaux au travail dégradés",
+  "Reconnaissance au travail": "Rapports sociaux au travail dégradés",
+};
+
+// Sens de lecture du score brut de chaque catégorie : "risk" = un score élevé signale un risque
+// plus élevé (ex. charge de travail), "protective" = un score élevé signale une situation favorable.
+const karasekCategoryDirection = {
+  "Niveau des Exigences": "risk",
+  "Degré d'Autonomie et équilibre vie privée / vie professionnelle": "protective",
+  "Niveau de Soutien (collègues et manager)": "protective",
+  "Reconnaissance au travail": "protective",
+};
+
+// Quelques items isolés relèvent d'un axe différent de celui de leur catégorie d'appartenance.
+const karasekAxisItemOverrides = {
+  "Mon activité professionnelle est en accord avec mon éthique": "Conflits de valeurs",
+  "Je suis inquiet par rapport à l'évolution de mon métier": "Insécurité de la situation de travail",
+  // Même construit que l'échelle COPSOQ "Sens du travail", mappée sur ce même axe.
+  "Mon travail a du sens": "Conflits de valeurs",
+  // Ces items de la catégorie "Degré d'Autonomie et équilibre vie privée / vie professionnelle"
+  // relèvent en réalité de l'articulation vie pro/vie perso et du temps de travail (cf. l'échelle
+  // COPSOQ "Conflit famille/travail", elle aussi rattachée à cet axe), pas de l'autonomie.
+  "J'utilise ma messagerie et les autres outils numériques pour des raisons professionnelles sur mon temps personnel":
+    "Intensité du travail et temps de travail",
+  "Je maîtrise les moments et les lieux où je juge nécessaire de me déconnecter ou me connecter afin de préserver mon équilibre vie privée / vie professionnelle":
+    "Intensité du travail et temps de travail",
+  "Je me forme sur des sujets professionnels sur mon temps personnel": "Intensité du travail et temps de travail",
+  "Je reçois rarement une demande nécessitant une réponse immédiate": "Intensité du travail et temps de travail",
+};
+
+function getKarasekItemAxis(entry) {
+  return karasekAxisItemOverrides[entry.item] || karasekAxisByCategory[entry.category] || null;
+}
+
+// Libellés affichés pour les 4 dimensions Karasek-Siegrist dans le Sankey (les items isolés
+// ci-dessus ne créent plus leurs propres nœuds : ils restent comptés dans la dimension à
+// laquelle ils appartiennent, seul leur axe Gollac/INRS diffère pour le calcul par axe).
+const karasekDimensionDisplayNames = {
+  "Niveau des Exigences": "Exigences psychologiques",
+  "Degré d'Autonomie et équilibre vie privée / vie professionnelle": "Autonomie/latitude décisionnelle",
+  "Niveau de Soutien (collègues et manager)": "Soutien social au travail",
+  "Reconnaissance au travail": "Reconnaissance au travail",
+};
+
+// Axe Gollac/INRS attribué à chaque échelle du questionnaire COPSOQ (version française du dépôt).
+// Une valeur "null" indique un indicateur de santé/attitude, non retenu comme facteur d'exposition RPS.
+const copsoqAxisByEchelleFr = {
+  "Charge de travail": "Intensité du travail et temps de travail",
+  "Rythme de travail": "Intensité du travail et temps de travail",
+  "Exigences cognitives": "Intensité du travail et temps de travail",
+  "Prévisibilité": "Intensité du travail et temps de travail",
+  "Clarté des rôles": "Intensité du travail et temps de travail",
+  "Conflit famille/travail": "Intensité du travail et temps de travail",
+  "Exigences émotionnelles": "Exigences émotionnelles",
+  "Marge de manœuvre": "Manque d'autonomie",
+  "Possibilités d'épanouissement": "Manque d'autonomie",
+  "Reconnaissance": "Rapports sociaux au travail dégradés",
+  "Équité": "Rapports sociaux au travail dégradés",
+  "Qualité de leadership du supérieur hiérarchique": "Rapports sociaux au travail dégradés",
+  "Soutien social de la part du supérieur hiérarchique": "Rapports sociaux au travail dégradés",
+  "Confiance entre les salariés et le management": "Rapports sociaux au travail dégradés",
+  "Confiance entre les collègues": "Rapports sociaux au travail dégradés",
+  "Soutien social de la part des collègues": "Rapports sociaux au travail dégradés",
+  "Conflit de rôles": "Conflits de valeurs",
+  "Sens du travail": "Conflits de valeurs",
+  "Insécurité professionnelle": "Insécurité de la situation de travail",
+  "Santé auto-évaluée": null,
+  "Stress": null,
+  "Épuisement": null,
+  "Engagement dans l'entreprise": null,
+  "Satisfaction au travail": null,
+};
+
+// Domaine COPSOQ (FR) de chaque échelle : dérivé directement du questionnaire (questionsFR)
+// pour rester garanti cohérent avec la structure réelle Domaines/Échelles.
+let copsoqDomainByEchelleFrCache = null;
+function getCopsoqDomainByEchelle() {
+  if (!copsoqDomainByEchelleFrCache) {
+    copsoqDomainByEchelleFrCache = {};
+    questionsFR.forEach((question) => {
+      copsoqDomainByEchelleFrCache[question.echelle] = question.domaine;
+    });
+  }
+  return copsoqDomainByEchelleFrCache;
+}
+
+// Ordre d'affichage : domaine par domaine, puis échelles dans l'ordre de chaque domaine,
+// pour que les échelles d'un même domaine restent regroupées au même niveau dans le Sankey.
+const copsoqDomainDisplayOrder = [
+  "Contraintes quantitatives",
+  "Organisation et leadership",
+  "Relations horizontales",
+  "Autonomie",
+  "Vécu professionnel",
+  "Santé et Bien-être",
+];
+const copsoqEchelleDisplayOrderByDomain = {
+  "Contraintes quantitatives": ["Charge de travail", "Rythme de travail", "Exigences cognitives"],
+  "Organisation et leadership": [
+    "Prévisibilité",
+    "Reconnaissance",
+    "Équité",
+    "Clarté des rôles",
+    "Conflit de rôles",
+    "Qualité de leadership du supérieur hiérarchique",
+    "Soutien social de la part du supérieur hiérarchique",
+    "Confiance entre les salariés et le management",
+  ],
+  "Relations horizontales": ["Confiance entre les collègues", "Soutien social de la part des collègues"],
+  "Autonomie": ["Marge de manœuvre", "Possibilités d'épanouissement"],
+  "Santé et Bien-être": [
+    "Santé auto-évaluée",
+    "Stress",
+    "Épuisement",
+    "Exigences émotionnelles",
+    "Conflit famille/travail",
+    "Insécurité professionnelle",
+  ],
+  "Vécu professionnel": ["Sens du travail", "Engagement dans l'entreprise", "Satisfaction au travail"],
+};
+
+// Ordre d'affichage explicite des dimensions Karasek-Siegrist dans le Sankey.
+const karasekDimDisplayOrder = [
+  "Exigences psychologiques",
+  "Autonomie/latitude décisionnelle",
+  "Soutien social au travail",
+  "Reconnaissance au travail",
+];
+
+// Rassemble les correspondances brutes (échelles COPSOQ + dimensions Karasek-Siegrist)
+// utilisées par les visualisations Sankey du référentiel et de la correspondance.
+function getRpsGollacCorrespondenceEntries() {
+  const domainByEchelle = getCopsoqDomainByEchelle();
+  const copsoqEchelles = Object.entries(copsoqAxisByEchelleFr).sort(([echelleA], [echelleB]) => {
+    const domainA = domainByEchelle[echelleA];
+    const domainB = domainByEchelle[echelleB];
+    const domainDiff = copsoqDomainDisplayOrder.indexOf(domainA) - copsoqDomainDisplayOrder.indexOf(domainB);
+    if (domainDiff !== 0) {
+      return domainDiff;
+    }
+    const echelleOrder = copsoqEchelleDisplayOrderByDomain[domainA] || [];
+    return echelleOrder.indexOf(echelleA) - echelleOrder.indexOf(echelleB);
+  });
+  const karasekDims = Object.entries(karasekAxisByCategory).map(([category, axis]) => ({
+    label: karasekDimensionDisplayNames[category],
+    axis,
+  }));
+  const copsoqDomains = [...new Set(copsoqEchelles.map(([echelle]) => getCopsoqDomainByEchelle()[echelle]))];
+  const sortedKarasekDims = [...karasekDims].sort(
+    (a, b) => karasekDimDisplayOrder.indexOf(a.label) - karasekDimDisplayOrder.indexOf(b.label),
+  );
+  return { copsoqEchelles, karasekDims, copsoqDomains, sortedKarasekDims };
+}
+
+function hexToRgba(hex, alpha) {
+  const value = parseInt(hex.slice(1), 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// Ramène chaque réponse Karasek-Siegrist à un score 0-100 où 100 = situation favorable,
+// pour rester comparable aux scores COPSOQ (qui suivent déjà cette convention).
+function getKarasekItemProtectivePercent(entry) {
+  const percent = (entry.selectedValue / 3) * 100;
+  const direction = karasekCategoryDirection[entry.category] || "protective";
+  return direction === "risk" ? 100 - percent : percent;
+}
+
+function computeKarasekAxisScores(ordered) {
+  const totals = {};
+  rpsGollacAxes.forEach((axis) => {
+    totals[axis] = { sum: 0, count: 0 };
+  });
+  ordered.forEach((entry) => {
+    if (entry.selectedChoiceIndex < 0) {
+      return;
+    }
+    const axis = getKarasekItemAxis(entry);
+    if (!axis || !totals[axis]) {
+      return;
+    }
+    totals[axis].sum += getKarasekItemProtectivePercent(entry);
+    totals[axis].count += 1;
+  });
+  const scores = {};
+  rpsGollacAxes.forEach((axis) => {
+    const { sum, count } = totals[axis];
+    scores[axis] = count > 0 ? Math.round(sum / count) : null;
+  });
+  return scores;
+}
+
+function computeCopsoqAxisScores(answers) {
+  const totals = {};
+  rpsGollacAxes.forEach((axis) => {
+    totals[axis] = { sum: 0, count: 0 };
+  });
+  answers.forEach((answer) => {
+    const axis = copsoqAxisByEchelleFr[answer.echelle];
+    if (!axis || !totals[axis]) {
+      return;
+    }
+    totals[axis].sum += getScoreForAnswer(answer, answer.answerIndex);
+    totals[axis].count += 1;
+  });
+  const scores = {};
+  rpsGollacAxes.forEach((axis) => {
+    const { sum, count } = totals[axis];
+    scores[axis] = count > 0 ? Math.round(sum / count) : null;
+  });
+  return scores;
+}
+
+// Positionne les nœuds d'une colonne en reprenant le même pas vertical que la colonne la plus
+// longue (les échelles), et centre les colonnes plus courtes : chaque colonne occupe ainsi la
+// même hauteur par nœud que les échelles au lieu d'être étirée sur toute la hauteur du graphique.
+// pitchMultiplier permet d'espacer légèrement plus certaines colonnes (ex. dimensions Karasek-Siegrist).
+function getRpsGollacSankeyNodeY(index, count, referenceCount, top = 0.06, bottom = 0.94, pitchMultiplier = 1) {
+  if (referenceCount <= 1 || count <= 1) {
+    return (top + bottom) / 2;
+  }
+  const pitch = ((bottom - top) / (referenceCount - 1)) * pitchMultiplier;
+  const columnSpan = pitch * (count - 1);
+  const columnTop = top + (bottom - top - columnSpan) / 2;
+  return columnTop + pitch * index;
+}
+
+// Marge verticale et espacement inter-nœuds utilisés à la fois pour le calcul de la mise en
+// page (layout.margin) et pour le calage pixel-perfect des colonnes Domaines / Axes ci-dessous.
+const RPS_GOLLAC_SANKEY_MARGIN = 30;
+const RPS_GOLLAC_SANKEY_NODE_PAD = 10;
+
+// Plotly dimensionne chaque nœud Sankey proportionnellement à sa valeur totale de flux (ici,
+// le nombre d'échelles qui le traversent), avec la colonne des échelles comme référence
+// d'échelle : elle remplit exactement la hauteur disponible (valeur 1 par échelle + pad entre
+// chaque nœud). Pour les colonnes Domaines / Axes Gollac-INRS, dont les nœuds ont des poids très
+// différents (2 à 8 échelles), un simple espacement régulier par index chevauche les nœuds les
+// plus "lourds". On calcule donc ici, en pixels, la position empilée de chaque nœud à partir de
+// son poids réel, avec un espace fixe garanti entre deux nœuds, puis on centre la colonne.
+function stackRpsGollacSankeyColumnByWeight(weights, referenceCount, plotHeight, gapPx = 22, top = 0.06, bottom = 0.94) {
+  const plotAreaPx = plotHeight - RPS_GOLLAC_SANKEY_MARGIN * 2;
+  const unitPx = (plotAreaPx - RPS_GOLLAC_SANKEY_NODE_PAD * (referenceCount - 1)) / referenceCount;
+  const heightsPx = weights.map((weight) => Math.max(weight, 0.0001) * unitPx);
+  const totalHeightPx = heightsPx.reduce((sum, h) => sum + h, 0) + gapPx * (weights.length - 1);
+  const availablePx = (bottom - top) * plotAreaPx;
+  let cursor = (availablePx - totalHeightPx) / 2;
+  return heightsPx.map((h) => {
+    const centerPx = cursor + h / 2;
+    cursor += h + gapPx;
+    return top + centerPx / plotAreaPx;
+  });
+}
+
+function buildRpsGollacSankeyFigure() {
+  const { copsoqEchelles, copsoqDomains, sortedKarasekDims } = getRpsGollacCorrespondenceEntries();
+  const referenceCount = Math.max(
+    copsoqEchelles.length,
+    copsoqDomains.length,
+    rpsGollacAxes.length,
+    sortedKarasekDims.length,
+  );
+  const height = getRpsGollacSankeyHeight();
+  const domainWeights = copsoqDomains.map(
+    (domain) => copsoqEchelles.filter(([echelle]) => getCopsoqDomainByEchelle()[echelle] === domain).length,
+  );
+  const axisWeights = rpsGollacAxes.map((axis) => copsoqEchelles.filter(([, echelleAxis]) => echelleAxis === axis).length);
+  const domainY = stackRpsGollacSankeyColumnByWeight(domainWeights, copsoqEchelles.length, height);
+  const axisY = stackRpsGollacSankeyColumnByWeight(axisWeights, copsoqEchelles.length, height);
+
+  const nodeLabels = [];
+  const nodeX = [];
+  const nodeY = [];
+  const nodeColor = [];
+  const nodeIndexByKey = new Map();
+  const spreadY = (index, count) => getRpsGollacSankeyNodeY(index, count, referenceCount);
+  // Un peu plus d'espace entre les dimensions Karasek-Siegrist.
+  const spreadYKarasek = (index, count) => getRpsGollacSankeyNodeY(index, count, referenceCount, 0.06, 0.94, 1.4);
+  const addNode = (key, label, x, y, color) => {
+    nodeIndexByKey.set(key, nodeLabels.length);
+    nodeLabels.push(label);
+    nodeX.push(x);
+    nodeY.push(y);
+    nodeColor.push(color);
+  };
+
+  copsoqEchelles.forEach(([echelle], index) => {
+    addNode(`echelle:${echelle}`, echelle, 0.01, spreadY(index, copsoqEchelles.length), paulTolMutedColors[6]);
+  });
+  copsoqDomains.forEach((domain, index) => {
+    addNode(`domain:${domain}`, domain, 0.28, domainY[index], paulTolMutedColors[7]);
+  });
+  rpsGollacAxes.forEach((axis, index) => {
+    addNode(`axis:${axis}`, axis, 0.56, axisY[index], paulTolMutedColors[0]);
+  });
+  sortedKarasekDims.forEach((dim, index) => {
+    addNode(`karasek:${dim.label}`, dim.label, 0.99, spreadYKarasek(index, sortedKarasekDims.length), paulTolMutedColors[8]);
+  });
+
+  const linkSource = [];
+  const linkTarget = [];
+  const linkValue = [];
+  const linkColor = [];
+  const addLink = (sourceKey, targetKey, color, value = 1) => {
+    if (!nodeIndexByKey.has(sourceKey) || !nodeIndexByKey.has(targetKey)) {
+      return;
+    }
+    linkSource.push(nodeIndexByKey.get(sourceKey));
+    linkTarget.push(nodeIndexByKey.get(targetKey));
+    linkValue.push(value);
+    linkColor.push(color);
+  };
+
+  copsoqEchelles.forEach(([echelle]) => {
+    addLink(`echelle:${echelle}`, `domain:${getCopsoqDomainByEchelle()[echelle]}`, hexToRgba(paulTolMutedColors[1], 0.35));
+  });
+  const domainAxisCounts = new Map();
+  copsoqEchelles.forEach(([echelle, axis]) => {
+    const key = `${getCopsoqDomainByEchelle()[echelle]}|${axis}`;
+    domainAxisCounts.set(key, (domainAxisCounts.get(key) || 0) + 1);
+  });
+  domainAxisCounts.forEach((count, key) => {
+    const [domain, axis] = key.split("|");
+    addLink(`domain:${domain}`, `axis:${axis}`, hexToRgba(paulTolMutedColors[1], 0.35), count);
+  });
+  sortedKarasekDims.forEach((dim) => {
+    addLink(`axis:${dim.axis}`, `karasek:${dim.label}`, hexToRgba(paulTolMutedColors[1], 0.35));
+  });
+
+  return {
+    data: [
+      {
+        type: "sankey",
+        orientation: "h",
+        arrangement: "fixed",
+        node: {
+          label: nodeLabels,
+          x: nodeX,
+          y: nodeY,
+          color: nodeColor,
+          pad: RPS_GOLLAC_SANKEY_NODE_PAD,
+          thickness: 14,
+          line: { color: "#ffffff", width: 0.5 },
+          hoverinfo: "skip",
+        },
+        link: {
+          source: linkSource,
+          target: linkTarget,
+          value: linkValue,
+          color: linkColor,
+          hoverinfo: "skip",
+        },
+      },
+    ],
+  };
+}
+
+// Config Plotly commune aux visualisations Sankey : ne garder que
+// l'enregistrement en image et le plein écran dans la modebar.
+function getRpsGollacSimplePlotConfig(container) {
+  return {
+    responsive: true,
+    displaylogo: false,
+    modeBarButtonsToRemove: [
+      "zoom2d",
+      "pan2d",
+      "select2d",
+      "lasso2d",
+      "zoomIn2d",
+      "zoomOut2d",
+      "autoScale2d",
+      "resetScale2d",
+      "toggleHover",
+      "toggleSpikelines",
+      "hoverClosestCartesian",
+      "hoverCompareCartesian",
+      "resetSankeyGroup",
+      "hoverClosestSankey",
+    ],
+    modeBarButtonsToAdd: [
+      {
+        name: "fullscreen",
+        title: "Visualiser en plein écran",
+        icon: {
+          width: 500,
+          height: 500,
+          path: "M0,0 L150,0 L150,50 L50,50 L50,150 L0,150 Z M350,0 L500,0 L500,150 L450,150 L450,50 L350,50 Z M0,350 L50,350 L50,450 L150,450 L150,500 L0,500 Z M450,350 L500,350 L500,500 L350,500 L350,450 L450,450 Z",
+        },
+        click: () => toggleCopsoqFullscreen(container),
+      },
+    ],
+  };
+}
+
+// Hauteur du diagramme Sankey calée sur la colonne la plus longue (les échelles COPSOQ),
+// pour que chaque étiquette de nœud reste lisible et pleinement visible, tout en restant
+// responsive (recalculée à chaque rendu à partir de la fenêtre courante).
+function getRpsGollacSankeyHeight() {
+  const { copsoqEchelles, copsoqDomains, sortedKarasekDims } = getRpsGollacCorrespondenceEntries();
+  const rowCount = Math.max(copsoqEchelles.length, copsoqDomains.length, rpsGollacAxes.length, sortedKarasekDims.length, 1);
+  return Math.max(680, Math.round(window.innerHeight * 0.78), rowCount * 32 + 100);
+}
+
+function renderRpsGollacSankey(plotId) {
+  const container = document.getElementById(plotId);
+  if (!container || typeof Plotly === "undefined") {
+    return;
+  }
+  const figure = buildRpsGollacSankeyFigure();
+  const height = getRpsGollacSankeyHeight();
+  const layout = {
+    autosize: true,
+    height,
+    font: { size: 12 },
+    margin: { l: 10, r: 10, t: RPS_GOLLAC_SANKEY_MARGIN, b: RPS_GOLLAC_SANKEY_MARGIN },
+  };
+  // Fixe la hauteur réelle du conteneur : sans cela, "responsive" la ramène au
+  // min-height CSS (bien plus petit) au moindre redimensionnement, masquant les nœuds.
+  container.style.height = `${height}px`;
+  ensureCopsoqFullscreenBehavior(container);
+  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container)).then(() =>
+    ensureRpsGollacSankeyHoverHighlight(container),
+  );
+}
+
+// Survol d'un lien : le met en évidence avec tous les liens qu'il alimente en aval (colonnes
+// suivantes), en atténuant les autres — hoverinfo étant à "skip", Plotly ne fait rien de tel
+// nativement, ce comportement est donc entièrement géré ici via les éléments <path> du SVG.
+// Le survol d'une étiquette de nœud applique le même surlignage que celui de n'importe lequel
+// de ses liens (tous ses liens entrants/sortants, puis tout le chemin complet qui en découle).
+function ensureRpsGollacSankeyHoverHighlight(container) {
+  const linksGroup = container.querySelector("svg g.sankey-links");
+  if (!linksGroup) {
+    return;
+  }
+  const linkPaths = Array.from(linksGroup.querySelectorAll("path"));
+  const outgoingByNode = new Map();
+  const incomingByNode = new Map();
+  const pathByLink = new Map();
+  const addToMap = (map, key, path) => {
+    const list = map.get(key) || [];
+    list.push(path);
+    map.set(key, list);
+  };
+  linkPaths.forEach((path) => {
+    const link = path.__data__ && path.__data__.link;
+    if (!link) {
+      return;
+    }
+    addToMap(outgoingByNode, link.source, path);
+    addToMap(incomingByNode, link.target, path);
+    pathByLink.set(link, path);
+  });
+
+  // Remonte ET descend depuis chaque lien de départ, pour surligner tout le chemin complet
+  // (Échelles -> Domaines -> Axes Gollac/INRS -> Dimensions Karasek-Siegrist) quelle que soit
+  // la colonne (ou le nœud) survolé, pas seulement ce qui se trouve en aval.
+  const getConnectedLinks = (seedLinks) => {
+    const highlighted = new Set();
+    const walk = (startNode, byNode, getNextNode) => {
+      const visited = new Set();
+      let frontier = [startNode];
+      while (frontier.length) {
+        const next = [];
+        frontier.forEach((nodeIndex) => {
+          if (visited.has(nodeIndex)) {
+            return;
+          }
+          visited.add(nodeIndex);
+          (byNode.get(nodeIndex) || []).forEach((path) => {
+            highlighted.add(path);
+            next.push(getNextNode(path.__data__.link));
+          });
+        });
+        frontier = next;
+      }
+    };
+    seedLinks.forEach((link) => {
+      const seedPath = pathByLink.get(link);
+      if (seedPath) {
+        highlighted.add(seedPath);
+      }
+      walk(link.target, outgoingByNode, (l) => l.target);
+      walk(link.source, incomingByNode, (l) => l.source);
+    });
+    return highlighted;
+  };
+
+  const applyHighlight = (highlighted) => {
+    linkPaths.forEach((otherPath) => {
+      otherPath.style.opacity = highlighted.has(otherPath) ? "1" : "0.12";
+    });
+  };
+  const resetHighlight = () => {
+    linkPaths.forEach((otherPath) => {
+      otherPath.style.opacity = "";
+    });
+  };
+
+  linkPaths.forEach((path) => {
+    path.addEventListener("mouseover", () => applyHighlight(getConnectedLinks([path.__data__.link])));
+    path.addEventListener("mouseout", resetHighlight);
+  });
+
+  const nodeGroups = Array.from(container.querySelectorAll("svg g.sankey-node"));
+  nodeGroups.forEach((nodeGroup) => {
+    const node = nodeGroup.__data__ && nodeGroup.__data__.node;
+    if (!node) {
+      return;
+    }
+    const seedLinks = [...(node.sourceLinks || []), ...(node.targetLinks || [])];
+    nodeGroup.addEventListener("mouseover", () => applyHighlight(getConnectedLinks(seedLinks)));
+    nodeGroup.addEventListener("mouseout", resetHighlight);
+  });
+}
+
+const RPS_GOLLAC_NO_SCORE_COLOR = "#9aa5b1";
+
+function getRpsGollacItemColor(score) {
+  return Number.isFinite(score) ? getScoreColor(score) : RPS_GOLLAC_NO_SCORE_COLOR;
+}
+
+// Les scores de dimension Karasek-Siegrist sont classés par quart strict (25 points chacun),
+// comme les quartiles 0-9/10-18/19-27/28-36 des résultats bruts du questionnaire — contrairement
+// à getScoreColor (bandes Okabe-Ito 0-20/21-50/51-79/80-100, plus étroites aux extrémités), qui
+// pouvait faire glisser un score du quart le plus défavorable vers un quart moins défavorable.
+function getKarasekDimensionItemColor(score) {
+  if (!Number.isFinite(score)) {
+    return RPS_GOLLAC_NO_SCORE_COLOR;
+  }
+  if (score <= 25) return "#D55E00";
+  if (score <= 50) return "#E69F00";
+  if (score < 75) return "#F0E442";
+  return "#009E73";
+}
+
+// Score 0-100 par dimension Karasek-Siegrist (même échelle "protective" que computeKarasekAxisScores).
+// Les items isolés (cf. karasekAxisItemOverrides) restent comptés dans la dimension de leur
+// catégorie d'origine : seul leur axe Gollac/INRS diffère (computeKarasekAxisScores).
+function computeKarasekDimensionScores(ordered) {
+  const scores = {};
+  Object.keys(karasekAxisByCategory).forEach((category) => {
+    const items = ordered.filter((row) => row.category === category && row.selectedChoiceIndex >= 0);
+    const label = karasekDimensionDisplayNames[category];
+    scores[label] = items.length
+      ? Math.round(items.reduce((sum, row) => sum + getKarasekItemProtectivePercent(row), 0) / items.length)
+      : null;
+  });
+  return scores;
+}
+
+
+// Score 0-100 par échelle COPSOQ, réutilise le regroupement déjà utilisé par les résultats COPSOQ.
+function computeCopsoqEchelleScores(answers) {
+  const { scaleStatsByDomain } = buildDomainSummary(answers);
+  const scores = {};
+  Object.values(scaleStatsByDomain).forEach((scalesForDomain) => {
+    Object.entries(scalesForDomain).forEach(([echelle, score]) => {
+      scores[echelle] = score;
+    });
+  });
+  return scores;
+}
+
+// Calcule les scores (échelle / domaine / axe / dimension) utilisés pour colorer les Sankey
+// de correspondance ; karasekFiles / copsoqFiles sont des tableaux (moyenne sur plusieurs
+// fichiers si besoin, un seul élément pour le rapprochement RPS individuel).
+function computeRpsGollacCorrespondanceScores(karasekFiles, copsoqFiles) {
+  const { copsoqEchelles, karasekDims } = getRpsGollacCorrespondenceEntries();
+
+  const averageScores = (perFileScores, keys) => {
+    const result = {};
+    keys.forEach((key) => {
+      const values = perFileScores.map((scores) => scores[key]).filter((value) => Number.isFinite(value));
+      result[key] = values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
+    });
+    return result;
+  };
+
+  const echelleKeys = copsoqEchelles.map(([echelle]) => echelle);
+  const karasekDimKeys = karasekDims.map((dim) => dim.label);
+
+  const echelleScores = copsoqFiles.length
+    ? averageScores(copsoqFiles.map((file) => computeCopsoqEchelleScores(file.answers)), echelleKeys)
+    : {};
+  const karasekDimScores = karasekFiles.length
+    ? averageScores(karasekFiles.map((file) => computeKarasekDimensionScores(file.ordered)), karasekDimKeys)
+    : {};
+  const karasekAxisScores = karasekFiles.length
+    ? averageScores(karasekFiles.map((file) => computeKarasekAxisScores(file.ordered)), rpsGollacAxes)
+    : {};
+  const copsoqAxisScores = copsoqFiles.length
+    ? averageScores(copsoqFiles.map((file) => computeCopsoqAxisScores(file.answers)), rpsGollacAxes)
+    : {};
+
+  const domainTotals = new Map();
+  copsoqEchelles.forEach(([echelle]) => {
+    const score = echelleScores[echelle];
+    if (!Number.isFinite(score)) {
+      return;
+    }
+    const domain = getCopsoqDomainByEchelle()[echelle];
+    if (!domainTotals.has(domain)) {
+      domainTotals.set(domain, []);
+    }
+    domainTotals.get(domain).push(score);
+  });
+  const domainScores = {};
+  domainTotals.forEach((values, domain) => {
+    domainScores[domain] = Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+  });
+
+  const axisScores = {};
+  rpsGollacAxes.forEach((axis) => {
+    const values = [karasekAxisScores[axis], copsoqAxisScores[axis]].filter((value) => Number.isFinite(value));
+    axisScores[axis] = values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
+  });
+
+  return { echelleScores, domainScores, axisScores, karasekDimScores };
+}
+
+function buildRpsGollacCorrespondanceSankeyFigure(scores, linkColorOverride = null) {
+  const { copsoqEchelles, copsoqDomains, sortedKarasekDims } = getRpsGollacCorrespondenceEntries();
+  const { echelleScores, domainScores, axisScores, karasekDimScores } = scores;
+  const referenceCount = Math.max(
+    copsoqEchelles.length,
+    copsoqDomains.length,
+    rpsGollacAxes.length,
+    sortedKarasekDims.length,
+  );
+  const height = getRpsGollacSankeyHeight();
+  const domainWeights = copsoqDomains.map(
+    (domain) => copsoqEchelles.filter(([echelle]) => getCopsoqDomainByEchelle()[echelle] === domain).length,
+  );
+  const axisWeights = rpsGollacAxes.map((axis) => copsoqEchelles.filter(([, echelleAxis]) => echelleAxis === axis).length);
+  const domainY = stackRpsGollacSankeyColumnByWeight(domainWeights, copsoqEchelles.length, height);
+  const axisY = stackRpsGollacSankeyColumnByWeight(axisWeights, copsoqEchelles.length, height);
+
+  const nodeLabels = [];
+  const nodeX = [];
+  const nodeY = [];
+  const nodeColor = [];
+  const nodeIndexByKey = new Map();
+  const spreadY = (index, count) => getRpsGollacSankeyNodeY(index, count, referenceCount);
+  // Un peu plus d'espace entre les dimensions Karasek-Siegrist.
+  const spreadYKarasek = (index, count) => getRpsGollacSankeyNodeY(index, count, referenceCount, 0.06, 0.94, 1.4);
+  const addNode = (key, label, x, y, color) => {
+    nodeIndexByKey.set(key, nodeLabels.length);
+    nodeLabels.push(label);
+    nodeX.push(x);
+    nodeY.push(y);
+    nodeColor.push(color);
+  };
+
+  copsoqEchelles.forEach(([echelle], index) => {
+    addNode(
+      `echelle:${echelle}`,
+      echelle,
+      0.01,
+      spreadY(index, copsoqEchelles.length),
+      getRpsGollacItemColor(echelleScores[echelle]),
+    );
+  });
+  copsoqDomains.forEach((domain, index) => {
+    addNode(`domain:${domain}`, domain, 0.28, domainY[index], getRpsGollacItemColor(domainScores[domain]));
+  });
+  rpsGollacAxes.forEach((axis, index) => {
+    addNode(`axis:${axis}`, axis, 0.56, axisY[index], getRpsGollacItemColor(axisScores[axis]));
+  });
+  sortedKarasekDims.forEach((dim, index) => {
+    addNode(
+      `karasek:${dim.label}`,
+      dim.label,
+      0.99,
+      spreadYKarasek(index, sortedKarasekDims.length),
+      getKarasekDimensionItemColor(karasekDimScores[dim.label]),
+    );
+  });
+
+  const linkSource = [];
+  const linkTarget = [];
+  const linkValue = [];
+  const linkColor = [];
+  const addLink = (sourceKey, targetKey, color, value = 1) => {
+    if (!nodeIndexByKey.has(sourceKey) || !nodeIndexByKey.has(targetKey)) {
+      return;
+    }
+    linkSource.push(nodeIndexByKey.get(sourceKey));
+    linkTarget.push(nodeIndexByKey.get(targetKey));
+    linkValue.push(value);
+    linkColor.push(color);
+  };
+
+  copsoqEchelles.forEach(([echelle]) => {
+    const score = echelleScores[echelle];
+    if (linkColorOverride && !Number.isFinite(score)) {
+      return;
+    }
+    addLink(
+      `echelle:${echelle}`,
+      `domain:${getCopsoqDomainByEchelle()[echelle]}`,
+      linkColorOverride || hexToRgba(getRpsGollacItemColor(score), 0.35),
+    );
+  });
+  const domainAxisCounts = new Map();
+  copsoqEchelles.forEach(([echelle, axis]) => {
+    const key = `${getCopsoqDomainByEchelle()[echelle]}|${axis}`;
+    domainAxisCounts.set(key, (domainAxisCounts.get(key) || 0) + 1);
+  });
+  domainAxisCounts.forEach((count, key) => {
+    const [domain, axis] = key.split("|");
+    const score = domainScores[domain];
+    if (linkColorOverride && !Number.isFinite(score)) {
+      return;
+    }
+    addLink(`domain:${domain}`, `axis:${axis}`, linkColorOverride || hexToRgba(getRpsGollacItemColor(score), 0.35), count);
+  });
+  sortedKarasekDims.forEach((dim) => {
+    const score = karasekDimScores[dim.label];
+    if (linkColorOverride && !Number.isFinite(score)) {
+      return;
+    }
+    addLink(
+      `axis:${dim.axis}`,
+      `karasek:${dim.label}`,
+      linkColorOverride || hexToRgba(getKarasekDimensionItemColor(score), 0.35),
+    );
+  });
+
+  return {
+    data: [
+      {
+        type: "sankey",
+        orientation: "h",
+        arrangement: "fixed",
+        node: {
+          label: nodeLabels,
+          x: nodeX,
+          y: nodeY,
+          color: nodeColor,
+          pad: RPS_GOLLAC_SANKEY_NODE_PAD,
+          thickness: 14,
+          line: { color: "#ffffff", width: 0.5 },
+          hoverinfo: "skip",
+        },
+        link: {
+          source: linkSource,
+          target: linkTarget,
+          value: linkValue,
+          color: linkColor,
+          hoverinfo: "skip",
+        },
+      },
+    ],
+  };
+}
+
+function renderRpsGollacCorrespondanceSankey(plotId, scores) {
+  const container = document.getElementById(plotId);
+  if (!container || typeof Plotly === "undefined") {
+    return;
+  }
+  const figure = buildRpsGollacCorrespondanceSankeyFigure(scores);
+  const height = getRpsGollacSankeyHeight();
+  const layout = {
+    autosize: true,
+    height,
+    font: { size: 12 },
+    margin: { l: 10, r: 10, t: RPS_GOLLAC_SANKEY_MARGIN, b: RPS_GOLLAC_SANKEY_MARGIN },
+  };
+  container.style.height = `${height}px`;
+  ensureCopsoqFullscreenBehavior(container);
+  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container)).then(() =>
+    ensureRpsGollacSankeyHoverHighlight(container),
+  );
+}
+
+function computeRpsGollacAxisStatistics(scoreMaps) {
+  const stats = {};
+  rpsGollacAxes.forEach((axis) => {
+    const values = scoreMaps.map((scores) => scores[axis]).filter((value) => Number.isFinite(value));
+    stats[axis] = {
+      mean: values.length ? Math.round(getStatisticValue(values, "mean")) : null,
+      median: values.length ? Math.round(getStatisticValue(values, "median")) : null,
+      min: values.length ? Math.round(getStatisticValue(values, "min")) : null,
+      max: values.length ? Math.round(getStatisticValue(values, "max")) : null,
+    };
+  });
+  return stats;
+}
+
+function createRpsGollacScorePastille(score) {
+  const wrap = document.createElement("span");
+  wrap.className = "rps-score-pastille-wrap";
+  if (!Number.isFinite(score)) {
+    wrap.textContent = "—";
+    return wrap;
+  }
+  const dot = document.createElement("span");
+  dot.className = "rps-score-pastille";
+  dot.style.backgroundColor = getScoreColor(score);
+  const text = document.createElement("span");
+  text.textContent = String(score);
+  wrap.append(dot, text);
+  return wrap;
+}
+
+function buildRpsGollacComparisonTable(karasekScores, copsoqScores) {
+  const wrap = document.createElement("div");
+  wrap.className = "results-table-wrap";
+  const table = document.createElement("table");
+  table.className = "results-table";
+  table.style.width = "auto";
+  const thead = document.createElement("thead");
+  thead.innerHTML =
+    "<tr><th>Facteurs Gollac / INRS</th><th style='white-space: nowrap;'>Karasek-Siegrist</th><th style='white-space: nowrap;'>COPSOQ (FR)</th><th>Écart</th></tr>";
+  const tbody = document.createElement("tbody");
+  rpsGollacAxes.forEach((axis) => {
+    const karasekScore = karasekScores ? karasekScores[axis] : null;
+    const copsoqScore = copsoqScores ? copsoqScores[axis] : null;
+    const row = document.createElement("tr");
+    const axisCell = document.createElement("td");
+    axisCell.textContent = axis;
+    const karasekCell = document.createElement("td");
+    karasekCell.className = "check-cell";
+    karasekCell.append(createRpsGollacScorePastille(karasekScore));
+    const copsoqCell = document.createElement("td");
+    copsoqCell.className = "check-cell";
+    copsoqCell.append(createRpsGollacScorePastille(copsoqScore));
+    const gapCell = document.createElement("td");
+    gapCell.className = "check-cell";
+    gapCell.textContent =
+      Number.isFinite(karasekScore) && Number.isFinite(copsoqScore)
+        ? String(Math.abs(karasekScore - copsoqScore))
+        : "—";
+    row.append(axisCell, karasekCell, copsoqCell, gapCell);
+    tbody.append(row);
+  });
+  table.append(thead, tbody);
+  wrap.append(table);
+  return wrap;
+}
+
+function renderRpsGollacIndividualView() {
+  if (!contentRoot) {
+    return;
+  }
+  contentRoot.hidden = false;
+  contentRoot.innerHTML = "";
+
+  const title = document.createElement("h2");
+  title.className = "content-title";
+  title.textContent = "Rapprochement RPS";
+
+  const subtitle = document.createElement("p");
+  subtitle.className = "content-subtitle";
+  subtitle.textContent = "Rapprochement RPS individuel";
+
+  const intro = document.createElement("article");
+  intro.className = "content-card";
+  intro.innerHTML =
+    "<p>Chargez un résultat sauvegardé (fichier .json exporté depuis les pages « Questionnaire ») de Karasek-Siegrist et/ou de COPSOQ pour comparer les scores obtenus sur les 6 axes du " +
+    "<a href='https://travail-emploi.gouv.fr/mesurer-les-facteurs-psychosociaux-de-risque-au-travail-pour-les-maitriser' target='_blank' rel='noopener noreferrer'>rapport « Gollac »</a> repris par " +
+    "<a href='https://www.inrs.fr/risques/psychosociaux/facteurs-risques.html' target='_blank' rel='noopener noreferrer'>l'INRS</a>. " +
+    "Les scores sont ramenés sur une échelle de 0 (situation à risque) à 100 (situation favorable) afin d'être comparables entre les deux questionnaires. " +
+    "Cette correspondance est une proposition indicative, à valider si besoin par un préventeur ou un expert RPS. Voir le sous-menu « Référentiel » pour le détail de la correspondance.</p>";
+
+  const actions = document.createElement("div");
+  actions.className = "questionnaire-actions";
+
+  const karasekInput = document.createElement("input");
+  karasekInput.type = "file";
+  karasekInput.accept = ".json,application/json";
+  karasekInput.style.display = "none";
+
+  const copsoqInput = document.createElement("input");
+  copsoqInput.type = "file";
+  copsoqInput.accept = ".json,application/json";
+  copsoqInput.style.display = "none";
+
+  const karasekBtn = document.createElement("button");
+  karasekBtn.type = "button";
+  karasekBtn.className = "secondary-btn";
+  karasekBtn.textContent = "Charger un résultat Karasek-Siegrist (.json)";
+
+  const copsoqBtn = document.createElement("button");
+  copsoqBtn.type = "button";
+  copsoqBtn.className = "secondary-btn";
+  copsoqBtn.textContent = "Charger un résultat COPSOQ Français (.json)";
+
+  const karasekStatus = document.createElement("span");
+  karasekStatus.textContent = "Aucun fichier Karasek-Siegrist chargé.";
+
+  const copsoqStatus = document.createElement("span");
+  copsoqStatus.textContent = "Aucun fichier COPSOQ chargé.";
+
+  actions.append(karasekBtn, karasekStatus, copsoqBtn, copsoqStatus);
+
+  const resultsHeading = document.createElement("h3");
+  resultsHeading.textContent = "Comparaison des scores";
+
+  const comparisonHost = document.createElement("div");
+
+  const plotPanel = document.createElement("section");
+  plotPanel.className = "plot-panel";
+  const plotArea = document.createElement("div");
+  plotArea.id = "rps-gollac-individual-sankey";
+  plotArea.className = "plot-area";
+  plotPanel.append(plotArea);
+
+  let karasekResult = null;
+  let copsoqResult = null;
+
+  function refreshComparison() {
+    const karasekScores = karasekResult ? computeKarasekAxisScores(karasekResult.ordered) : null;
+    const copsoqScores = copsoqResult ? computeCopsoqAxisScores(copsoqResult.answers) : null;
+    comparisonHost.innerHTML = "";
+    comparisonHost.append(buildRpsGollacComparisonTable(karasekScores, copsoqScores));
+    const correspondanceScores = computeRpsGollacCorrespondanceScores(
+      karasekResult ? [karasekResult] : [],
+      copsoqResult ? [copsoqResult] : [],
+    );
+    renderRpsGollacCorrespondanceSankey("rps-gollac-individual-sankey", correspondanceScores);
+  }
+
+  karasekBtn.addEventListener("click", () => karasekInput.click());
+  copsoqBtn.addEventListener("click", () => copsoqInput.click());
+
+  karasekInput.addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) {
+      return;
+    }
+    try {
+      karasekResult = await readKarasekSavedFile(file);
+      karasekStatus.textContent = `Karasek-Siegrist : ${karasekResult.fileName}`;
+      refreshComparison();
+    } catch (error) {
+      alert(error.message || "Impossible de charger le fichier Karasek-Siegrist.");
+    } finally {
+      event.target.value = "";
+    }
+  });
+
+  copsoqInput.addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const data = await readSavedFile(file);
+      if (resolveLang(data.lang) !== "fr") {
+        throw new Error("Cette vue nécessite un résultat COPSOQ en version française.");
+      }
+      copsoqResult = data;
+      copsoqStatus.textContent = `COPSOQ : ${copsoqResult.fileName}`;
+      refreshComparison();
+    } catch (error) {
+      alert(error.message || "Impossible de charger le fichier COPSOQ.");
+    } finally {
+      event.target.value = "";
+    }
+  });
+
+  contentRoot.append(
+    title,
+    subtitle,
+    intro,
+    actions,
+    plotPanel,
+    resultsHeading,
+    comparisonHost,
+    karasekInput,
+    copsoqInput,
+  );
+  refreshComparison();
+  scrollToPageTop();
+}
+
+function renderRpsGollacReferentielView() {
+  if (!contentRoot) {
+    return;
+  }
+  contentRoot.hidden = false;
+  contentRoot.innerHTML = "";
+
+  const title = document.createElement("h2");
+  title.className = "content-title";
+  title.textContent = "Rapprochement RPS";
+
+  const subtitle = document.createElement("p");
+  subtitle.className = "content-subtitle";
+  subtitle.textContent = "Référentiel";
+
+  const sankeyCard = document.createElement("article");
+  sankeyCard.className = "content-card";
+  const sankeyHeading = document.createElement("h3");
+  sankeyHeading.textContent = "Correspondance (diagramme de flux Sankey)";
+  const sankeyPanel = document.createElement("section");
+  sankeyPanel.className = "plot-panel";
+  const sankeyArea = document.createElement("div");
+  sankeyArea.id = "rps-gollac-referentiel-sankey";
+  sankeyArea.className = "plot-area";
+  sankeyPanel.append(sankeyArea);
+  sankeyCard.append(sankeyHeading, sankeyPanel);
+
+  contentRoot.append(title, subtitle, sankeyCard);
+  renderRpsGollacSankey("rps-gollac-referentiel-sankey");
+  scrollToPageTop();
+}
+
+function computeAggregatedRpsGollacStats(files, computeScoresFn) {
+  return computeRpsGollacAxisStatistics(files.map(computeScoresFn));
+}
+
+const rpsStatKeys = ["mean", "median", "min", "max"];
+const rpsStatLabels = { mean: "Moyenne", median: "Médiane", min: "Minimum", max: "Maximum" };
+
+function buildRpsGollacMultiStatsTable(karasekStats, copsoqStats) {
+  const wrap = document.createElement("div");
+  wrap.className = "results-table-wrap";
+  const table = document.createElement("table");
+  table.className = "results-table";
+  table.style.width = "auto";
+  const thead = document.createElement("thead");
+  const headRow1 = document.createElement("tr");
+  const axisHeader = document.createElement("th");
+  axisHeader.textContent = "Axe Gollac / INRS";
+  axisHeader.rowSpan = 2;
+  headRow1.append(axisHeader);
+  rpsStatKeys.forEach((statKey) => {
+    const th = document.createElement("th");
+    th.colSpan = 3;
+    th.textContent = rpsStatLabels[statKey];
+    th.style.textAlign = "center";
+    headRow1.append(th);
+  });
+  const headRow2 = document.createElement("tr");
+  rpsStatKeys.forEach(() => {
+    ["Karasek-Siegrist", "COPSOQ (FR)", "Écart"].forEach((label) => {
+      const th = document.createElement("th");
+      th.textContent = label;
+      th.style.whiteSpace = "nowrap";
+      headRow2.append(th);
+    });
+  });
+  thead.append(headRow1, headRow2);
+  const tbody = document.createElement("tbody");
+  rpsGollacAxes.forEach((axis) => {
+    const row = document.createElement("tr");
+    const axisCell = document.createElement("td");
+    axisCell.textContent = axis;
+    row.append(axisCell);
+    rpsStatKeys.forEach((statKey) => {
+      const karasekValue = karasekStats ? karasekStats[axis][statKey] : null;
+      const copsoqValue = copsoqStats ? copsoqStats[axis][statKey] : null;
+      const karasekCell = document.createElement("td");
+      karasekCell.className = "check-cell";
+      karasekCell.append(createRpsGollacScorePastille(karasekValue));
+      const copsoqCell = document.createElement("td");
+      copsoqCell.className = "check-cell";
+      copsoqCell.append(createRpsGollacScorePastille(copsoqValue));
+      const gapCell = document.createElement("td");
+      gapCell.className = "check-cell";
+      gapCell.textContent =
+        Number.isFinite(karasekValue) && Number.isFinite(copsoqValue)
+          ? String(Math.abs(karasekValue - copsoqValue))
+          : "—";
+      row.append(karasekCell, copsoqCell, gapCell);
+    });
+    tbody.append(row);
+  });
+  table.append(thead, tbody);
+  wrap.append(table);
+  return wrap;
+}
+
+function renderRpsGollacMultiIndividualsView() {
+  if (!contentRoot) {
+    return;
+  }
+  contentRoot.hidden = false;
+  contentRoot.innerHTML = "";
+
+  const title = document.createElement("h2");
+  title.className = "content-title";
+  title.textContent = "Rapprochement RPS";
+
+  const subtitle = document.createElement("p");
+  subtitle.className = "content-subtitle";
+  subtitle.textContent = "Rapprochement RPS de plusieurs individus";
+
+  const intro = document.createElement("article");
+  intro.className = "content-card";
+  intro.innerHTML =
+    "<p>Ajoutez un ou plusieurs fichiers .json Karasek-Siegrist et/ou COPSOQ Français. Vous pouvez ajouter des fichiers à plusieurs reprises : les statistiques (moyenne, médiane, minimum, maximum) sont recalculées sur l'ensemble des fichiers chargés.</p>";
+
+  const actions = document.createElement("div");
+  actions.className = "questionnaire-actions";
+
+  const karasekInput = document.createElement("input");
+  karasekInput.type = "file";
+  karasekInput.accept = ".json,application/json";
+  karasekInput.multiple = true;
+  karasekInput.style.display = "none";
+
+  const copsoqInput = document.createElement("input");
+  copsoqInput.type = "file";
+  copsoqInput.accept = ".json,application/json";
+  copsoqInput.multiple = true;
+  copsoqInput.style.display = "none";
+
+  const karasekBtn = document.createElement("button");
+  karasekBtn.type = "button";
+  karasekBtn.className = "secondary-btn";
+  karasekBtn.textContent = "Ajouter des fichiers Karasek-Siegrist (.json)";
+
+  const copsoqBtn = document.createElement("button");
+  copsoqBtn.type = "button";
+  copsoqBtn.className = "secondary-btn";
+  copsoqBtn.textContent = "Ajouter des fichiers COPSOQ Français (.json)";
+
+  const karasekStatus = document.createElement("span");
+  const copsoqStatus = document.createElement("span");
+
+  actions.append(karasekBtn, karasekStatus, copsoqBtn, copsoqStatus);
+
+  const resultsHeading = document.createElement("h3");
+  resultsHeading.textContent = "Comparaison des statistiques";
+
+  const comparisonHost = document.createElement("div");
+
+  const plotPanel = document.createElement("section");
+  plotPanel.className = "plot-panel";
+  const plotArea = document.createElement("div");
+  plotArea.id = "rps-gollac-multi-individus-sankey";
+  plotArea.className = "plot-area";
+  plotPanel.append(plotArea);
+
+  const detailsHeading = document.createElement("h3");
+  detailsHeading.textContent = "Détail des fichiers chargés";
+  const detailsHost = document.createElement("div");
+
+  function updateStatusLabels() {
+    karasekStatus.textContent = rpsMultiKarasekFiles.length
+      ? `${rpsMultiKarasekFiles.length} fichier(s) Karasek-Siegrist chargé(s).`
+      : "Aucun fichier Karasek-Siegrist chargé.";
+    copsoqStatus.textContent = rpsMultiCopsoqFiles.length
+      ? `${rpsMultiCopsoqFiles.length} fichier(s) COPSOQ chargé(s).`
+      : "Aucun fichier COPSOQ chargé.";
+  }
+
+  function refresh() {
+    updateStatusLabels();
+    const karasekStats = rpsMultiKarasekFiles.length
+      ? computeAggregatedRpsGollacStats(rpsMultiKarasekFiles, (file) => computeKarasekAxisScores(file.ordered))
+      : null;
+    const copsoqStats = rpsMultiCopsoqFiles.length
+      ? computeAggregatedRpsGollacStats(rpsMultiCopsoqFiles, (file) => computeCopsoqAxisScores(file.answers))
+      : null;
+    comparisonHost.innerHTML = "";
+    comparisonHost.append(buildRpsGollacMultiStatsTable(karasekStats, copsoqStats));
+    const correspondanceScores = computeRpsGollacCorrespondanceScores(rpsMultiKarasekFiles, rpsMultiCopsoqFiles);
+    renderRpsGollacCorrespondanceSankey("rps-gollac-multi-individus-sankey", correspondanceScores);
+    detailsHost.innerHTML = "";
+    detailsHost.append(
+      buildRpsGollacGroupsFileDetails([...rpsMultiKarasekBatches, ...rpsMultiCopsoqBatches], { showSwatch: false }),
+    );
+  }
+
+  karasekBtn.addEventListener("click", () => karasekInput.click());
+  copsoqBtn.addEventListener("click", () => copsoqInput.click());
+
+  karasekInput.addEventListener("change", async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) {
+      return;
+    }
+    const { loaded, errors } = await loadKarasekFiles(files);
+    rpsMultiKarasekFiles = [...rpsMultiKarasekFiles, ...loaded];
+    if (loaded.length) {
+      // Files are always merged into the single Karasek-Siegrist batch, never split into new lots.
+      const existing = rpsMultiKarasekBatches[0];
+      const fileNames = [...(existing ? existing.fileNames : []), ...loaded.map((file) => file.fileName)];
+      rpsMultiKarasekBatches = [
+        { type: "karasek", label: "Fichiers", fileNames, color: paulTolMutedColors[0] },
+      ];
+    }
+    if (errors.length) {
+      alert(`Certains fichiers n'ont pas pu être chargés:\n- ${errors.slice(0, 5).join("\n- ")}`);
+    }
+    refresh();
+    event.target.value = "";
+  });
+
+  copsoqInput.addEventListener("change", async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) {
+      return;
+    }
+    const loaded = [];
+    const errors = [];
+    for (const file of files) {
+      try {
+        const data = await readSavedFile(file);
+        if (resolveLang(data.lang) !== "fr") {
+          throw new Error(`${file.name} : cette vue nécessite un résultat COPSOQ en version française.`);
+        }
+        loaded.push(data);
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : `Impossible de lire ${file.name}.`);
+      }
+    }
+    rpsMultiCopsoqFiles = [...rpsMultiCopsoqFiles, ...loaded];
+    if (loaded.length) {
+      // Files are always merged into the single COPSOQ batch, never split into new lots.
+      const existing = rpsMultiCopsoqBatches[0];
+      const fileNames = [...(existing ? existing.fileNames : []), ...loaded.map((file) => file.fileName)];
+      rpsMultiCopsoqBatches = [
+        { type: "copsoq", label: "Fichiers", fileNames, color: paulTolMutedColors[1 % paulTolMutedColors.length] },
+      ];
+    }
+    if (errors.length) {
+      alert(`Certains fichiers n'ont pas pu être chargés:\n- ${errors.slice(0, 5).join("\n- ")}`);
+    }
+    refresh();
+    event.target.value = "";
+  });
+
+  contentRoot.append(
+    title,
+    subtitle,
+    intro,
+    actions,
+    plotPanel,
+    resultsHeading,
+    comparisonHost,
+    detailsHeading,
+    detailsHost,
+    karasekInput,
+    copsoqInput,
+  );
+  refresh();
+  scrollToPageTop();
+}
+
+function buildRpsGollacGroupsTable(entries, onSelectLot) {
+  const wrap = document.createElement("div");
+  wrap.className = "results-table-wrap";
+  const table = document.createElement("table");
+  table.className = "results-table";
+  table.style.width = "auto";
+
+  const lotsByType = { karasek: new Map(), copsoq: new Map() };
+  entries.forEach((entry) => {
+    const match = /Lot (\d+)/.exec(entry.label);
+    if (!match) {
+      return;
+    }
+    lotsByType[entry.type].set(Number(match[1]), entry);
+  });
+  const sortedLots = [...new Set([...lotsByType.karasek.keys(), ...lotsByType.copsoq.keys()])].sort((a, b) => a - b);
+  const columnCount = 1 + rpsStatKeys.length * 3;
+
+  const thead = document.createElement("thead");
+  const headRow1 = document.createElement("tr");
+  const groupHeader = document.createElement("th");
+  groupHeader.textContent = "Groupe";
+  groupHeader.rowSpan = 2;
+  headRow1.append(groupHeader);
+  rpsStatKeys.forEach((statKey) => {
+    const th = document.createElement("th");
+    th.colSpan = 3;
+    th.textContent = rpsStatLabels[statKey];
+    th.style.textAlign = "center";
+    headRow1.append(th);
+  });
+  const headRow2 = document.createElement("tr");
+  rpsStatKeys.forEach(() => {
+    ["Karasek-Siegrist", "COPSOQ (FR)", "Écart"].forEach((label) => {
+      const th = document.createElement("th");
+      th.textContent = label;
+      th.style.whiteSpace = "nowrap";
+      headRow2.append(th);
+    });
+  });
+  thead.append(headRow1, headRow2);
+
+  const tbody = document.createElement("tbody");
+  rpsGollacAxes.forEach((axis) => {
+    const axisRow = document.createElement("tr");
+    const axisCell = document.createElement("td");
+    axisCell.colSpan = columnCount;
+    axisCell.textContent = axis;
+    axisCell.style.fontWeight = "700";
+    axisCell.style.backgroundColor = "#eef5fa";
+    axisRow.append(axisCell);
+    tbody.append(axisRow);
+    if (!sortedLots.length) {
+      const emptyRow = document.createElement("tr");
+      const emptyCell = document.createElement("td");
+      emptyCell.colSpan = columnCount;
+      emptyCell.textContent = "Aucun groupe chargé.";
+      emptyRow.append(emptyCell);
+      tbody.append(emptyRow);
+      return;
+    }
+    sortedLots.forEach((lotNumber) => {
+      const karasekEntry = lotsByType.karasek.get(lotNumber);
+      const copsoqEntry = lotsByType.copsoq.get(lotNumber);
+      const row = document.createElement("tr");
+      const groupCell = document.createElement("td");
+      const lotColor = (karasekEntry || copsoqEntry).color;
+      const swatch = document.createElement("span");
+      swatch.style.display = "inline-block";
+      swatch.style.width = "10px";
+      swatch.style.height = "10px";
+      swatch.style.borderRadius = "50%";
+      swatch.style.marginRight = "4px";
+      swatch.style.backgroundColor = lotColor;
+      if (onSelectLot) {
+        swatch.style.cursor = "pointer";
+        swatch.title = `Afficher le diagramme Sankey du Lot ${lotNumber}`;
+        swatch.addEventListener("click", () => onSelectLot(lotNumber, karasekEntry, copsoqEntry));
+      }
+      groupCell.append(swatch, document.createTextNode(`Lot ${lotNumber}`));
+      row.append(groupCell);
+      rpsStatKeys.forEach((statKey) => {
+        const karasekValue = karasekEntry ? karasekEntry.stats[axis][statKey] : null;
+        const copsoqValue = copsoqEntry ? copsoqEntry.stats[axis][statKey] : null;
+        const karasekCell = document.createElement("td");
+        karasekCell.className = "check-cell";
+        karasekCell.append(createRpsGollacScorePastille(karasekValue));
+        const copsoqCell = document.createElement("td");
+        copsoqCell.className = "check-cell";
+        copsoqCell.append(createRpsGollacScorePastille(copsoqValue));
+        const gapCell = document.createElement("td");
+        gapCell.className = "check-cell";
+        gapCell.textContent =
+          Number.isFinite(karasekValue) && Number.isFinite(copsoqValue)
+            ? String(Math.abs(karasekValue - copsoqValue))
+            : "—";
+        row.append(karasekCell, copsoqCell, gapCell);
+      });
+      tbody.append(row);
+    });
+  });
+  table.append(thead, tbody);
+  wrap.append(table);
+  return wrap;
+}
+
+// Sankey d'un seul lot de "Rapprochement RPS de groupes" : mêmes nœuds/couleurs de score que le
+// Sankey de correspondance, mais les liens reprennent la couleur du repère du lot (au lieu
+// d'être colorés par score) pour rester identifiables comme appartenant à ce lot précis.
+function renderRpsGollacGroupSankey(plotId, karasekEntry, copsoqEntry, lotColor) {
+  const container = document.getElementById(plotId);
+  if (!container || typeof Plotly === "undefined") {
+    return;
+  }
+  const scores = computeRpsGollacCorrespondanceScores(
+    karasekEntry ? karasekEntry.files : [],
+    copsoqEntry ? copsoqEntry.files : [],
+  );
+  const figure = buildRpsGollacCorrespondanceSankeyFigure(scores, hexToRgba(lotColor, 0.55));
+  const height = getRpsGollacSankeyHeight();
+  const layout = {
+    autosize: true,
+    height,
+    font: { size: 12 },
+    margin: { l: 10, r: 10, t: RPS_GOLLAC_SANKEY_MARGIN, b: RPS_GOLLAC_SANKEY_MARGIN },
+  };
+  container.style.height = `${height}px`;
+  ensureCopsoqFullscreenBehavior(container);
+  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container)).then(() =>
+    ensureRpsGollacSankeyHoverHighlight(container),
+  );
+}
+
+function buildRpsGollacGroupsListColumn(entries, type, formatEntry, { showSwatch = true } = {}) {
+  const column = document.createElement("div");
+  const heading = document.createElement("h4");
+  heading.textContent = type === "karasek" ? "Karasek-Siegrist" : "COPSOQ (FR)";
+  const list = document.createElement("ul");
+  list.className = "rps-groups-list";
+  const filtered = entries.filter((entry) => entry.type === type);
+  if (!filtered.length) {
+    const emptyItem = document.createElement("li");
+    emptyItem.textContent = "Aucun lot chargé.";
+    list.append(emptyItem);
+  } else {
+    filtered.forEach((entry) => {
+      const item = document.createElement("li");
+      if (showSwatch) {
+        const swatch = document.createElement("span");
+        swatch.style.display = "inline-block";
+        swatch.style.width = "10px";
+        swatch.style.height = "10px";
+        swatch.style.borderRadius = "50%";
+        swatch.style.marginRight = "6px";
+        swatch.style.backgroundColor = entry.color;
+        item.append(swatch);
+      }
+      item.append(document.createTextNode(formatEntry(entry)));
+      list.append(item);
+    });
+  }
+  column.append(heading, list);
+  return column;
+}
+
+function formatRpsGollacFileCount(count) {
+  return `${count} fichier${count > 1 ? "s" : ""}`;
+}
+
+function buildRpsGollacGroupsSummary(entries) {
+  const wrap = document.createElement("div");
+  wrap.className = "results-layout";
+  wrap.style.gridTemplateColumns = "1fr 1fr";
+  const formatEntry = (entry) => `${entry.label} : ${formatRpsGollacFileCount(entry.fileNames.length)}`;
+  wrap.append(
+    buildRpsGollacGroupsListColumn(entries, "karasek", formatEntry),
+    buildRpsGollacGroupsListColumn(entries, "copsoq", formatEntry),
+  );
+  return wrap;
+}
+
+function buildRpsGollacGroupsFileDetails(entries, { showSwatch = true } = {}) {
+  const wrap = document.createElement("div");
+  wrap.className = "results-layout";
+  wrap.style.gridTemplateColumns = "1fr 1fr";
+  const formatEntry = (entry) => `${entry.label} : ${entry.fileNames.join(", ")}`;
+  wrap.append(
+    buildRpsGollacGroupsListColumn(entries, "karasek", formatEntry, { showSwatch }),
+    buildRpsGollacGroupsListColumn(entries, "copsoq", formatEntry, { showSwatch }),
+  );
+  return wrap;
+}
+
+function renderRpsGollacGroupsView() {
+  if (!contentRoot) {
+    return;
+  }
+  contentRoot.hidden = false;
+  contentRoot.innerHTML = "";
+
+  const title = document.createElement("h2");
+  title.className = "content-title";
+  title.textContent = "Rapprochement RPS";
+
+  const subtitle = document.createElement("p");
+  subtitle.className = "content-subtitle";
+  subtitle.textContent = "Rapprochement RPS de groupes";
+
+  const intro = document.createElement("article");
+  intro.className = "content-card";
+  intro.innerHTML =
+    "<p>Chaque ajout de fichiers Karasek-Siegrist ou COPSOQ Français crée un nouveau groupe (un « lot »), avec ses propres statistiques (moyenne, médiane, minimum, maximum). Cliquez sur le repère coloré d'un lot dans le tableau « Comparaison des groupes » pour afficher son diagramme Sankey (liens colorés selon le lot, étiquettes colorées selon le score).</p>";
+
+  const actions = document.createElement("div");
+  actions.className = "questionnaire-actions";
+
+  const karasekInput = document.createElement("input");
+  karasekInput.type = "file";
+  karasekInput.accept = ".json,application/json";
+  karasekInput.multiple = true;
+  karasekInput.style.display = "none";
+
+  const copsoqInput = document.createElement("input");
+  copsoqInput.type = "file";
+  copsoqInput.accept = ".json,application/json";
+  copsoqInput.multiple = true;
+  copsoqInput.style.display = "none";
+
+  const karasekBtn = document.createElement("button");
+  karasekBtn.type = "button";
+  karasekBtn.className = "secondary-btn";
+  karasekBtn.textContent = "Ajouter un groupe Karasek-Siegrist (plusieurs fichiers)";
+
+  const copsoqBtn = document.createElement("button");
+  copsoqBtn.type = "button";
+  copsoqBtn.className = "secondary-btn";
+  copsoqBtn.textContent = "Ajouter un groupe COPSOQ Français (plusieurs fichiers)";
+
+  actions.append(karasekBtn, copsoqBtn);
+
+  const summaryHeading = document.createElement("h3");
+  summaryHeading.textContent = "Fichiers chargés par lot";
+  const summaryHost = document.createElement("div");
+
+  const resultsHeading = document.createElement("h3");
+  resultsHeading.textContent = "Comparaison des groupes";
+
+  const comparisonHost = document.createElement("div");
+
+  const plotPanel = document.createElement("section");
+  plotPanel.className = "plot-panel";
+  const plotArea = document.createElement("div");
+  plotArea.id = "rps-gollac-groups-sankey";
+  plotArea.className = "plot-area";
+  const plotPlaceholder = document.createElement("p");
+  plotPlaceholder.textContent =
+    "Cliquez sur le repère coloré d'un lot dans le tableau « Comparaison des groupes » ci-dessous pour afficher son diagramme Sankey.";
+  plotArea.append(plotPlaceholder);
+  plotPanel.append(plotArea);
+
+  const detailsHeading = document.createElement("h3");
+  detailsHeading.textContent = "Détail des fichiers par lot";
+  const detailsHost = document.createElement("div");
+
+  function showLotSankey(lotNumber, karasekEntry, copsoqEntry) {
+    const lotColor = (karasekEntry || copsoqEntry).color;
+    renderRpsGollacGroupSankey("rps-gollac-groups-sankey", karasekEntry, copsoqEntry, lotColor);
+  }
+
+  function refresh() {
+    summaryHost.innerHTML = "";
+    summaryHost.append(buildRpsGollacGroupsSummary(rpsGroupEntries));
+    comparisonHost.innerHTML = "";
+    comparisonHost.append(buildRpsGollacGroupsTable(rpsGroupEntries, showLotSankey));
+    detailsHost.innerHTML = "";
+    detailsHost.append(buildRpsGollacGroupsFileDetails(rpsGroupEntries));
+  }
+
+  karasekBtn.addEventListener("click", () => karasekInput.click());
+  copsoqBtn.addEventListener("click", () => copsoqInput.click());
+
+  karasekInput.addEventListener("change", async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) {
+      return;
+    }
+    const { loaded, errors } = await loadKarasekFiles(files);
+    if (loaded.length) {
+      const lotNumber = rpsGroupEntries.filter((entry) => entry.type === "karasek").length + 1;
+      const label = `Lot ${lotNumber}`;
+      const stats = computeAggregatedRpsGollacStats(loaded, (file) => computeKarasekAxisScores(file.ordered));
+      const color = paulTolMutedColors[(lotNumber - 1) % paulTolMutedColors.length];
+      const fileNames = loaded.map((file) => file.fileName);
+      rpsGroupEntries = [...rpsGroupEntries, { type: "karasek", label, fileNames, files: loaded, stats, color }];
+    }
+    if (errors.length) {
+      alert(`Certains fichiers n'ont pas pu être chargés:\n- ${errors.slice(0, 5).join("\n- ")}`);
+    }
+    refresh();
+    event.target.value = "";
+  });
+
+  copsoqInput.addEventListener("change", async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) {
+      return;
+    }
+    const loaded = [];
+    const errors = [];
+    for (const file of files) {
+      try {
+        const data = await readSavedFile(file);
+        if (resolveLang(data.lang) !== "fr") {
+          throw new Error(`${file.name} : cette vue nécessite un résultat COPSOQ en version française.`);
+        }
+        loaded.push(data);
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : `Impossible de lire ${file.name}.`);
+      }
+    }
+    if (loaded.length) {
+      const lotNumber = rpsGroupEntries.filter((entry) => entry.type === "copsoq").length + 1;
+      const label = `Lot ${lotNumber}`;
+      const stats = computeAggregatedRpsGollacStats(loaded, (file) => computeCopsoqAxisScores(file.answers));
+      const color = paulTolMutedColors[(lotNumber - 1) % paulTolMutedColors.length];
+      const fileNames = loaded.map((file) => file.fileName);
+      rpsGroupEntries = [...rpsGroupEntries, { type: "copsoq", label, fileNames, files: loaded, stats, color }];
+    }
+    if (errors.length) {
+      alert(`Certains fichiers n'ont pas pu être chargés:\n- ${errors.slice(0, 5).join("\n- ")}`);
+    }
+    refresh();
+    event.target.value = "";
+  });
+
+  contentRoot.append(
+    title,
+    subtitle,
+    intro,
+    actions,
+    summaryHeading,
+    summaryHost,
+    plotPanel,
+    resultsHeading,
+    comparisonHost,
+    detailsHeading,
+    detailsHost,
+    karasekInput,
+    copsoqInput,
+  );
+  refresh();
+  scrollToPageTop();
 }
 
 menuData.forEach((entry) => {
@@ -3688,6 +5353,7 @@ function sunburstChart(sourceAnswers) {
     values,
     branchvalues: 'remainder',
     marker: { colors },
+    leaf: { opacity: 1 },
     textinfo: 'label',
     sort: false,
     hovertemplate: '%{label}<extra></extra>'
