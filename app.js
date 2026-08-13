@@ -46,8 +46,8 @@ const menuData = [
   },
 ];
 const externalMenuLinks = {
-  github: "https://github.com/mattru_microsoft/RPS",
-  "cc-by-nc-nd-4-0": "https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.en",
+  github: "https://github.com/leithleith/RPS",
+  "cc-by-nc-nd-4-0": "https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.fr",
   aide: "aide.html",
 };
 const menuRoot = document.getElementById("menu");
