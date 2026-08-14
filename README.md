@@ -15,8 +15,6 @@ https://www.copsoq-network.org/<br>
 https://www.copsoq-network.org/assets/pdf/COPSOQ-Sante-Publique.pdf<br>
 https://www.un.org/sites/un2.un.org/files/copsoq-network-guidelines-an-questionnaire.pdf<br>
 
-- Rapprochement COPSOQ FR => Facteurs Gollac/INRS <= Karasek-Siegrist | Correspondance: COPSOQ FR => Gollac/INRS PSR factors <= Karasek-Siegrist
-
 <>
 
 Contenu sous licence CC BY-NC-ND 4.0 | Content under CC BY-NC-ND 4.0 licence<br>

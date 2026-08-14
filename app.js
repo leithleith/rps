@@ -46,9 +46,8 @@ const menuData = [
   },
 ];
 const externalMenuLinks = {
-  github: "https://github.com/leithleith/RPS",
-  "cc-by-nc-nd-4-0": "https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.fr",
-  aide: "aide.html",
+  github: "https://github.com/mattru_microsoft/RPS",
+  "cc-by-nc-nd-4-0": "https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.en",
 };
 const menuRoot = document.getElementById("menu");
 const contentRoot = document.getElementById("content");
@@ -461,6 +460,334 @@ const contentData = {
     ],
   },
 };
+
+// Page « Aide » : ancien fichier statique aide.html porté dans la SPA (menu "Aide" au même
+// titre que les autres vues, plutôt qu'un lien externe vers une page séparée) — le contenu HTML
+// ci-dessous reprend celui de l'ancien fichier ; les ancres internes (#apercu, #menu, etc.)
+// fonctionnent nativement (navigateur) puisqu'il n'y a pas de routage par hash dans cette SPA.
+function renderAideView() {
+  if (!contentRoot) {
+    return;
+  }
+  contentRoot.hidden = false;
+  contentRoot.innerHTML = "";
+
+  const title = document.createElement("h2");
+  title.className = "content-title";
+  title.id = "aide-top";
+  title.textContent = "Aide";
+
+  const subtitle = document.createElement("p");
+  subtitle.className = "content-subtitle";
+  subtitle.textContent = "Guide d'utilisation complet";
+
+  const page = document.createElement("div");
+  page.className = "aide-page";
+  page.innerHTML = `
+    <p>Visite guidée complète de l'application : chaque menu, chaque sous-menu, chaque fonctionnalité, et des scénarios pas-à-pas illustrés par des captures d'écran réelles.</p>
+
+    <nav class="aide-toc">
+      <h2>Sommaire</h2>
+      <ol>
+        <li><a href="#apercu">Aperçu de l'application</a></li>
+        <li><a href="#menu">Le menu de navigation</a></li>
+        <li><a href="#karasek">Menu « Karasek-Siegrist »</a></li>
+        <li><a href="#copsoq">Menu « COPSOQ »</a></li>
+        <li><a href="#rapprochement">Menu « Rapprochement RPS »</a></li>
+        <li><a href="#a-propos">« A propos »</a></li>
+        <li><a href="#github-licence">« GitHub » et « CC BY-NC-ND 4.0 »</a></li>
+        <li><a href="#couleurs">Lecture des couleurs et des scores</a></li>
+        <li><a href="#scenarios">Scénarios pas-à-pas</a></li>
+        <li><a href="#fichiers-exemples">Fichiers exemples utilisés dans ce guide</a></li>
+        <li><a href="#accessibilite">Accessibilité et installation (PWA)</a></li>
+      </ol>
+    </nav>
+
+    <section class="aide-section" id="apercu">
+      <h2>1. Aperçu de l'application</h2>
+      <p>RPS est une application Web Progressive (PWA) fonctionnant entièrement dans le navigateur, sans envoi de données à un serveur : chaque questionnaire, chaque fichier chargé et chaque calcul reste local à votre poste. Elle permet de :</p>
+      <ul class="feature-list">
+        <li>Répondre en ligne aux questionnaires <strong>Karasek-Siegrist</strong> (version française) et <strong>COPSOQ</strong> (français/anglais) ;</li>
+        <li>Sauvegarder le résultat d'un questionnaire dans un fichier <code>.json</code> téléchargé sur votre poste ;</li>
+        <li>Recharger un ou plusieurs fichiers <code>.json</code> précédemment sauvegardés pour consulter, comparer ou regrouper des résultats (un individu, plusieurs individus, ou plusieurs groupes/lots) ;</li>
+        <li>Visualiser les résultats sous forme de tableaux, de graphiques polaires, de sunburst et de diagrammes de flux (Sankey) ;</li>
+        <li>Faire le <strong>rapprochement</strong> entre les résultats Karasek-Siegrist et COPSOQ au regard des 6 facteurs du rapport « Gollac » (repris par l'INRS) ;</li>
+        <li>Exporter n'importe quel graphique en image PNG et le consulter en plein écran.</li>
+      </ul>
+      <p>Trois grands menus structurent l'application : <strong>Karasek-Siegrist</strong>, <strong>COPSOQ</strong> et <strong>Rapprochement RPS</strong>, chacun avec la même logique de sous-menus : <em>Questionnaire</em>, <em>Importer un fichier</em>, <em>Importer plusieurs fichiers (individus)</em>, <em>Importer plusieurs fichiers (groupe)</em>, <em>Référentiel</em> (le menu Rapprochement RPS remplace les 3 premiers sous-menus par ses propres vues de comparaison).</p>
+    </section>
+
+    <section class="aide-section" id="menu">
+      <h2>2. Le menu de navigation</h2>
+      <p>Le bouton <strong>☰</strong> en haut à droite de l'en-tête ouvre/ferme le menu.</p>
+      <figure>
+        <img src="docs/screenshots/header-closed.png" alt="En-tête de l'application, menu fermé" />
+        <figcaption>En-tête de l'application avec le bouton hamburger (menu fermé).</figcaption>
+      </figure>
+      <figure>
+        <img src="docs/screenshots/menu-open.png" alt="Menu ouvert, sous-menus repliés" />
+        <figcaption>Menu ouvert : 7 entrées (Karasek-Siegrist, COPSOQ, Rapprochement RPS, A propos, Aide, GitHub, CC BY-NC-ND 4.0). Les trois premières se déplient au clic pour révéler leur sous-menu.</figcaption>
+      </figure>
+      <figure>
+        <img src="docs/screenshots/menu-open-submenu-expanded.png" alt="Sous-menu Karasek-Siegrist déplié" />
+        <figcaption>Clic sur « Karasek-Siegrist » : le sous-menu se déplie et affiche ses 5 entrées.</figcaption>
+      </figure>
+      <p>Sur un écran large, le menu s'élargit pour que chaque libellé de sous-menu tienne sur le moins de lignes possible ; sur mobile, il occupe toute la largeur de l'écran.</p>
+    </section>
+
+    <section class="aide-section" id="karasek">
+      <h2>3. Menu « Karasek-Siegrist »</h2>
+      <p>Regroupe tout ce qui concerne le questionnaire Karasek-Siegrist (version française), organisé en 4 catégories : <em>Niveau des Exigences</em>, <em>Degré d'Autonomie et équilibre vie privée / vie professionnelle</em>, <em>Niveau de Soutien (collègues et manager)</em>, <em>Reconnaissance au travail</em>.</p>
+
+      <h3 id="karasek-questionnaire">3.1 « Questionnaire »</h3>
+      <p>Affiche le questionnaire complet, organisé par catégorie. Une fois toutes les questions répondues, un bouton permet de calculer et sauvegarder le résultat (fichier <code>.json</code> téléchargé, nommé <span class="path">questionnaire-karasek-siegrist-&lt;horodatage&gt;.json</span>).</p>
+      <figure>
+        <img src="docs/screenshots/karasek-questionnaire.png" alt="Questionnaire Karasek-Siegrist" />
+        <figcaption>Le questionnaire Karasek-Siegrist, prêt à être rempli.</figcaption>
+      </figure>
+
+      <h3 id="karasek-importer-un-fichier">3.2 « Importer un fichier »</h3>
+      <p>Ouvre un sélecteur de fichier pour recharger <strong>un seul</strong> résultat <code>.json</code> précédemment sauvegardé. La page affiche alors :</p>
+      <ul class="feature-list">
+        <li>le détail des réponses, regroupées par catégorie, avec un bandeau de couleur par catégorie ;</li>
+        <li>le score brut (0 à 36) de chaque catégorie et sa couleur selon l'échelle à 4 niveaux <span class="badge b-green">vert</span><span class="badge b-yellow">jaune</span><span class="badge b-orange">orange</span><span class="badge b-red">rouge</span> (la même échelle que celle utilisée partout ailleurs dans l'application pour COPSOQ) ;</li>
+        <li>une classification globale en 4 zones (« Travail protecteur pour la santé », « Zone d'attention », « Zone d'alerte », « Travail dangereux pour la santé ») et une visualisation 3D des scores par zone.</li>
+      </ul>
+      <figure>
+        <img src="docs/screenshots/karasek-single-result.png" alt="Résultat individuel Karasek-Siegrist" />
+        <figcaption>Résultat d'un import individuel : détail des réponses par catégorie, scores et couleurs.</figcaption>
+      </figure>
+
+      <h3 id="karasek-importer-plusieurs-individus">3.3 « Importer plusieurs fichiers (individus) »</h3>
+      <p>Permet de charger plusieurs fichiers <code>.json</code> à la fois (et d'en ajouter d'autres par la suite) pour comparer plusieurs personnes : un tracé par individu, une table de statistiques (moyenne / médiane / minimum / maximum) par catégorie, et une répartition du nombre d'individus par zone.</p>
+      <figure>
+        <img src="docs/screenshots/karasek-multi-individus-result.png" alt="Comparaison multi-individus Karasek-Siegrist" />
+        <figcaption>4 fichiers chargés : statistiques de groupe, répartition par zone et visualisation 3D superposant les 4 individus.</figcaption>
+      </figure>
+
+      <h3 id="karasek-importer-groupe">3.4 « Importer plusieurs fichiers (groupe) »</h3>
+      <p>Comme ci-dessus, mais tous les individus sont fusionnés dans une seule et même trace de groupe (au lieu d'un tracé par individu), pour visualiser l'ensemble comme une seule population.</p>
+      <figure>
+        <img src="docs/screenshots/karasek-groupe-result.png" alt="Résultat groupe Karasek-Siegrist" />
+        <figcaption>Vue « groupe » : les mêmes fichiers, agrégés en une seule population.</figcaption>
+      </figure>
+
+      <h3 id="karasek-referentiel">3.5 « Référentiel »</h3>
+      <p>Une page de liens de référence (rapport « Gollac », INRS, ANACT) pour resituer le questionnaire Karasek-Siegrist dans son cadre théorique.</p>
+      <figure>
+        <img src="docs/screenshots/karasek-referentiel.png" alt="Référentiel Karasek-Siegrist" />
+        <figcaption>Liens vers les sources et références officielles.</figcaption>
+      </figure>
+    </section>
+
+    <section class="aide-section" id="copsoq">
+      <h2>4. Menu « COPSOQ »</h2>
+      <p>Structure identique au menu Karasek-Siegrist, pour le questionnaire COPSOQ (disponible en français et en anglais). Les résultats COPSOQ sont organisés en <strong>Domaines</strong>, eux-mêmes composés d'<strong>Échelles</strong>.</p>
+
+      <h3 id="copsoq-questionnaire">4.1 « Questionnaire »</h3>
+      <figure>
+        <img src="docs/screenshots/copsoq-questionnaire.png" alt="Questionnaire COPSOQ" />
+        <figcaption>Le questionnaire COPSOQ, avec sélecteur de langue et progression.</figcaption>
+      </figure>
+
+      <h3 id="copsoq-importer-un-fichier">4.2 « Importer un fichier / Import a file »</h3>
+      <p>Recharge un résultat COPSOQ individuel et affiche :</p>
+      <ul class="feature-list">
+        <li>un <strong>sunburst</strong> (graphique en anneaux concentriques) : l'anneau intérieur représente les Domaines, l'anneau extérieur les Échelles, chacun coloré selon son score (échelle à 4 couleurs Okabe-Ito, pleine opacité pour les deux anneaux) ;</li>
+        <li>les réponses détaillées, regroupées par Domaine puis par Échelle.</li>
+      </ul>
+      <figure>
+        <img src="docs/screenshots/copsoq-single-result.png" alt="Résultat individuel COPSOQ avec sunburst" />
+        <figcaption>Résultat individuel COPSOQ : graphique sunburst Domaines/Échelles et détail des réponses.</figcaption>
+      </figure>
+
+      <h3 id="copsoq-importer-plusieurs-individus">4.3 « Importer plusieurs fichiers (individus) / Import multiple files (individuals) »</h3>
+      <figure>
+        <img src="docs/screenshots/copsoq-multi-individus-result.png" alt="Comparaison multi-individus COPSOQ" />
+        <figcaption>Comparaison de 4 résultats COPSOQ : un tracé polaire par personne et statistiques de groupe.</figcaption>
+      </figure>
+
+      <h3 id="copsoq-importer-groupe">4.4 « Importer plusieurs fichiers (groupe) / Import multiple files (group) »</h3>
+      <figure>
+        <img src="docs/screenshots/copsoq-groupe-result.png" alt="Résultat groupe COPSOQ" />
+        <figcaption>Vue « groupe » COPSOQ : les fichiers fusionnés en une seule population.</figcaption>
+      </figure>
+
+      <h3 id="copsoq-referentiel">4.5 « Référentiel »</h3>
+      <figure>
+        <img src="docs/screenshots/copsoq-referentiel.png" alt="Référentiel COPSOQ" />
+        <figcaption>Liens de référence COPSOQ (COPSOQ Network, versions FR/EN, licences).</figcaption>
+      </figure>
+    </section>
+
+    <section class="aide-section" id="rapprochement">
+      <h2>5. Menu « Rapprochement RPS »</h2>
+      <p>Ce menu est le cœur analytique de l'application : il met en correspondance les résultats Karasek-Siegrist et COPSOQ au regard des <strong>6 facteurs de risques psychosociaux du rapport « Gollac »</strong> (repris par l'INRS) : Intensité du travail et temps de travail, Exigences émotionnelles, Manque d'autonomie, Rapports sociaux au travail dégradés, Conflits de valeurs, Insécurité de la situation de travail.</p>
+      <p>Toutes les vues de ce menu utilisent le même diagramme de flux (Sankey), organisé en 4 colonnes : <strong>Échelles COPSOQ → Domaines COPSOQ → Facteurs Gollac/INRS → Dimensions Karasek-Siegrist</strong>. Survoler un lien ou une étiquette met en évidence l'intégralité du chemin correspondant (en amont comme en aval).</p>
+
+      <h3 id="rapprochement-individuel">5.1 « Rapprochement RPS individuel »</h3>
+      <p>Chargez un résultat Karasek-Siegrist et/ou un résultat COPSOQ (les deux ne sont pas obligatoires) pour voir :</p>
+      <ul class="feature-list">
+        <li>le diagramme Sankey, chaque nœud coloré selon son score (échelle Okabe-Ito à 4 couleurs) ; les éléments sans donnée restent gris ;</li>
+        <li>le tableau « Comparaison des scores » : un facteur Gollac/INRS par ligne, avec le score Karasek-Siegrist, le score COPSOQ et l'écart entre les deux.</li>
+      </ul>
+      <figure>
+        <img src="docs/screenshots/rapprochement-individuel-result.png" alt="Rapprochement RPS individuel avec les deux fichiers chargés" />
+        <figcaption>Un fichier Karasek-Siegrist et un fichier COPSOQ chargés : Sankey coloré par score et tableau de comparaison rempli.</figcaption>
+      </figure>
+
+      <h3 id="rapprochement-multi-individus">5.2 « Rapprochement RPS de plusieurs individus »</h3>
+      <p>Comme ci-dessus, mais les scores affichés sont la moyenne calculée sur l'ensemble des fichiers Karasek-Siegrist et/ou COPSOQ chargés (vous pouvez ajouter des fichiers à plusieurs reprises).</p>
+      <figure>
+        <img src="docs/screenshots/rapprochement-multi-individus-result.png" alt="Rapprochement RPS de plusieurs individus" />
+        <figcaption>Plusieurs fichiers de chaque questionnaire chargés : les scores sont moyennés.</figcaption>
+      </figure>
+
+      <h3 id="rapprochement-groupes">5.3 « Rapprochement RPS de groupes »</h3>
+      <p>Chaque clic sur « Ajouter un groupe... » crée un nouveau <strong>lot</strong> (Lot 1, Lot 2, ...), avec ses propres statistiques. Par défaut, le diagramme Sankey superpose <strong>tous les lots à la fois</strong> : les nœuds (échelles, domaines, facteurs Gollac/INRS, dimensions Karasek-Siegrist) restent gris et communs à tous les lots, mais chaque lot ajoute son propre lien entre chaque paire de nœuds, coloré selon son repère (même couleur que dans le tableau « Comparaison des groupes ») — les liens de plusieurs lots partageant les mêmes nœuds s'affichent côte à côte plutôt que superposés, ce qui permet de distinguer visuellement chaque lot. Les étiquettes sont positionnées à l'écart des liens (à gauche des échelles, à droite des dimensions Karasek-Siegrist, au-dessus des domaines/facteurs Gollac-INRS) pour rester lisibles quelle que soit leur couleur.</p>
+      <figure>
+        <img src="docs/screenshots/rapprochement-groupes-before-click.png" alt="Rapprochement RPS de groupes, superposition de tous les lots" />
+        <figcaption>Deux lots chargés : le diagramme superpose les deux, et le tableau de comparaison est rempli.</figcaption>
+      </figure>
+      <p>Un bouton « Afficher uniquement le lot N » apparaît pour chaque lot (entre « Fichiers chargés par lot » et le diagramme), coloré comme son repère dans le tableau. Cliquez-le pour afficher uniquement le diagramme détaillé de ce lot : les liens reprennent la couleur du lot (pour l'identifier facilement), tandis que les étiquettes et les nœuds sont colorés selon le score de ce lot. Le bouton devient alors « Afficher tous les lots » (gris, comme les nœuds du diagramme superposé) ; cliquez-le à nouveau pour revenir à la vue de tous les lots.</p>
+      <figure>
+        <img src="docs/screenshots/rapprochement-groupes-lot-sankey.png" alt="Diagramme Sankey d'un lot après clic" />
+        <figcaption>Diagramme Sankey affiché après un clic sur le bouton « Afficher uniquement le lot 1 » : liens couleur du lot, étiquettes et nœuds colorés selon le score.</figcaption>
+      </figure>
+
+      <h3 id="rapprochement-referentiel">5.4 « Référentiel »</h3>
+      <p>Le diagramme Sankey « à vide » (structure complète, sans donnée chargée), qui sert de plan de référence : chaque colonne (Échelles, Domaines, Facteurs Gollac/INRS, Dimensions Karasek-Siegrist) est colorée uniformément avec une couleur de la palette Paul Tol muted, tout comme les liens entre chaque paire de colonnes.</p>
+      <figure>
+        <img src="docs/screenshots/rapprochement-referentiel.png" alt="Référentiel Rapprochement RPS" />
+        <figcaption>Structure complète du Sankey de référence, sans donnée chargée.</figcaption>
+      </figure>
+    </section>
+
+    <section class="aide-section" id="a-propos">
+      <h2>6. « A propos »</h2>
+      <p>Rappelle l'objet de l'application, les sources (Karasek-Siegrist, COPSOQ, rapport « Gollac », ANACT), les bibliothèques utilisées (Plotly.js) et les palettes de couleurs accessibles (Okabe-Ito, Paul Tol muted), ainsi que les licences (contenu sous CC BY-NC-ND 4.0, code sous licence MIT).</p>
+      <figure>
+        <img src="docs/screenshots/a-propos.png" alt="Page A propos" />
+        <figcaption>La page « A propos ».</figcaption>
+      </figure>
+    </section>
+
+    <section class="aide-section" id="github-licence">
+      <h2>7. « GitHub » et « CC BY-NC-ND 4.0 »</h2>
+      <p>Ces deux entrées de menu n'ouvrent pas de page interne : elles ouvrent, dans un nouvel onglet, respectivement le dépôt de code source de l'application sur GitHub et le texte complet de la licence Creative Commons BY-NC-ND 4.0 sous laquelle le contenu est publié.</p>
+    </section>
+
+    <section class="aide-section" id="couleurs">
+      <h2>8. Lecture des couleurs et des scores</h2>
+      <p>Toutes les échelles de score de l'application (0 à 100 pour les facteurs Gollac/INRS et les échelles/domaines COPSOQ ; 0 à 36 pour les catégories Karasek-Siegrist) utilisent la même palette de 4 couleurs, choisie pour rester lisible en cas de daltonisme (palette Okabe-Ito) :</p>
+      <p>
+        <span class="badge b-green">Vert #009E73</span> situation favorable/protectrice —
+        <span class="badge b-yellow">Jaune #F0E442</span> zone d'attention —
+        <span class="badge b-orange">Orange #E69F00</span> zone à risque —
+        <span class="badge b-red">Rouge/orange foncé #D55E00</span> situation la plus défavorable
+      </p>
+      <p>Pour les <strong>dimensions Karasek-Siegrist</strong> affichées dans les diagrammes Sankey du menu « Rapprochement RPS », le classement en 4 niveaux se fait par quart strict (25 points chacun sur une échelle 0-100), pour rester cohérent avec les 4 quartiles (0-9/10-18/19-27/28-36) utilisés sur les pages de résultats bruts Karasek-Siegrist.</p>
+      <p>Le gris <code>#9aa5b1</code> indique, dans les diagrammes Sankey de « Rapprochement RPS », un élément pour lequel aucune donnée n'a été chargée (ou, dans la vue « Rapprochement RPS de groupes » superposant tous les lots, un nœud partagé par plusieurs lots hors survol).</p>
+      <p>Dans le diagramme Sankey de « Référentiel » (structure vide), les couleurs ne représentent pas un score mais uniquement la colonne d'appartenance (palette Paul Tol muted, une couleur par colonne et par type de lien).</p>
+    </section>
+
+    <section class="aide-section" id="scenarios">
+      <h2>9. Scénarios pas-à-pas</h2>
+
+      <div class="scenario">
+        <h4>Scénario A — Répondre au questionnaire et sauvegarder son résultat</h4>
+        <ol>
+          <li>Ouvrez le menu, puis <strong>Karasek-Siegrist → Questionnaire</strong> (ou <strong>COPSOQ → Questionnaire</strong>).</li>
+          <li>Répondez à toutes les questions.</li>
+          <li>Cliquez sur le bouton de sauvegarde en bas du questionnaire : un fichier <code>.json</code> est téléchargé sur votre poste (dossier « Téléchargements » par défaut).</li>
+          <li>Conservez ce fichier : il pourra être rechargé plus tard dans n'importe laquelle des vues « Importer... » ou « Rapprochement RPS ».</li>
+        </ol>
+      </div>
+
+      <div class="scenario">
+        <h4>Scénario B — Consulter un résultat individuel déjà sauvegardé</h4>
+        <ol>
+          <li>Menu <strong>Karasek-Siegrist → Importer un fichier</strong> (ou <strong>COPSOQ → Importer un fichier</strong>).</li>
+          <li>Sélectionnez votre fichier <code>.json</code> dans la boîte de dialogue.</li>
+          <li>Les scores, couleurs et graphiques s'affichent immédiatement.</li>
+        </ol>
+      </div>
+
+      <div class="scenario">
+        <h4>Scénario C — Comparer plusieurs collaborateurs</h4>
+        <ol>
+          <li>Menu <strong>Karasek-Siegrist → Importer plusieurs fichiers (individus)</strong> (ou l'équivalent COPSOQ).</li>
+          <li>Sélectionnez plusieurs fichiers <code>.json</code> en une seule fois (maintenez <kbd>Ctrl</kbd> ou <kbd>Shift</kbd> enfoncé dans la boîte de dialogue pour une sélection multiple).</li>
+          <li>Le tableau de statistiques (moyenne/médiane/min/max) et les graphiques se mettent à jour.</li>
+          <li>Vous pouvez recommencer l'opération : les nouveaux fichiers viennent s'ajouter à ceux déjà chargés.</li>
+        </ol>
+      </div>
+
+      <div class="scenario">
+        <h4>Scénario D — Comparer plusieurs groupes/lots</h4>
+        <ol>
+          <li>Menu <strong>Karasek-Siegrist → Importer plusieurs fichiers (groupe)</strong> (ou COPSOQ, ou <strong>Rapprochement RPS → Rapprochement RPS de groupes</strong>).</li>
+          <li>Chaque clic sur le bouton d'ajout et sélection de fichiers crée un nouveau lot (« Lot 1 », « Lot 2 », etc.).</li>
+          <li>Le tableau de comparaison des groupes se met à jour à chaque nouveau lot ; dans la vue « Rapprochement RPS de groupes », le diagramme Sankey superpose automatiquement tous les lots.</li>
+          <li>Cliquez sur le bouton « Afficher uniquement le lot N » (coloré comme son repère) pour afficher uniquement son diagramme Sankey détaillé ; cliquez-le à nouveau (il devient « Afficher tous les lots ») pour revenir à la superposition.</li>
+        </ol>
+      </div>
+
+      <div class="scenario">
+        <h4>Scénario E — Croiser Karasek-Siegrist et COPSOQ pour une même personne</h4>
+        <ol>
+          <li>Menu <strong>Rapprochement RPS → Rapprochement RPS individuel</strong>.</li>
+          <li>Chargez le résultat Karasek-Siegrist de la personne, puis son résultat COPSOQ (l'ordre n'a pas d'importance, et un seul des deux suffit pour afficher un résultat partiel).</li>
+          <li>Consultez le diagramme Sankey (survolez un nœud ou un lien pour suivre tout le chemin associé) et le tableau « Comparaison des scores » (colonne « Écart » = différence entre les deux questionnaires).</li>
+        </ol>
+      </div>
+
+      <div class="scenario">
+        <h4>Scénario F — Exporter un graphique en image ou le consulter en plein écran</h4>
+        <ol>
+          <li>Sur n'importe quel graphique Plotly de l'application, une barre d'outils apparaît en survolant le coin supérieur droit du graphique.</li>
+          <li>L'icône appareil photo télécharge une image PNG du graphique, nommée selon la vue (ex. <code>rapprochement-rps-groupes-&lt;horodatage&gt;.png</code>).</li>
+          <li>L'icône plein écran (coins) bascule le graphique en mode plein écran pour une lecture plus confortable.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="aide-section" id="fichiers-exemples">
+      <h2>10. Fichiers exemples utilisés dans ce guide</h2>
+      <p>Les captures d'écran ci-dessus ont été réalisées avec des fichiers de résultats réels préalablement sauvegardés (dossier Téléchargements), afin d'illustrer des cas d'usage réalistes :</p>
+      <table class="sample-files">
+        <thead><tr><th>Rôle dans le guide</th><th>Fichier(s)</th></tr></thead>
+        <tbody>
+          <tr><td>Import individuel Karasek-Siegrist</td><td><code>questionnaire-karasek-siegrist-1786550140260.json</code></td></tr>
+          <tr><td>Import individuel COPSOQ</td><td><code>questionnaire-copsoq-sauvegarde1786550384004.json</code></td></tr>
+          <tr><td>Multi-individus Karasek-Siegrist (4 fichiers)</td><td><code>questionnaire-karasek-siegrist-1786550140260.json</code>, <code>...1786378891166.json</code>, <code>...1786378892787.json</code>, <code>...1786378170073.json</code></td></tr>
+          <tr><td>Multi-individus COPSOQ (4 fichiers)</td><td><code>questionnaire-copsoq-sauvegarde1786550384004.json</code>, <code>...1786378298773.json</code>, <code>...1786378334529.json</code>, <code>...1786378272129.json</code></td></tr>
+          <tr><td>Groupes / lots (2 lots de 2 fichiers chacun)</td><td>Karasek-Siegrist : Lot 1 = <code>...1786550140260.json</code> + <code>...1786378891166.json</code> ; Lot 2 = <code>...1786378892787.json</code> + <code>...1786378170073.json</code><br/>COPSOQ : Lot 1 = <code>...1786550384004.json</code> + <code>...1786378298773.json</code> ; Lot 2 = <code>...1786378334529.json</code> + <code>...1786378272129.json</code></td></tr>
+        </tbody>
+      </table>
+      <p>Vous pouvez utiliser vos propres fichiers <code>.json</code> exportés depuis les pages « Questionnaire » de la même façon.</p>
+    </section>
+
+    <section class="aide-section" id="accessibilite">
+      <h2>11. Accessibilité et installation (PWA)</h2>
+      <ul class="feature-list">
+        <li><strong>Application installable</strong> : un bouton d'installation apparaît dans l'en-tête sur les navigateurs compatibles, pour ajouter RPS comme application sur votre appareil (fonctionnement hors-ligne une fois installée).</li>
+        <li><strong>Palettes daltonisme-friendly</strong> : Okabe-Ito pour les scores, Paul Tol muted pour les éléments structurels — testées pour rester distinguables pour les principaux types de daltonisme.</li>
+        <li><strong>Menu responsive</strong> : s'adapte à la largeur d'écran disponible (bureau large, tablette, mobile).</li>
+        <li><strong>Focus clavier</strong> : tous les liens et boutons du menu affichent un contour visible au focus clavier.</li>
+      </ul>
+    </section>
+
+    <footer>
+      <p><a class="back-top" href="#aide-top">↑ Haut de page</a></p>
+      <p>Contenu sous licence <a href="https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.fr" target="_blank" rel="noopener noreferrer">CC BY-NC-ND 4.0</a> — Code sous licence <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener noreferrer">MIT</a>.</p>
+    </footer>
+  `;
+
+  contentRoot.append(title, subtitle, page);
+  scrollToPageTop();
+}
+
 function slugify(text) {
   return text
     .toLowerCase()
@@ -1835,6 +2162,12 @@ function openContent(contentId, activeLink) {
     return;
   }
 
+  if (contentId === "aide") {
+    renderAideView();
+    setActiveMenuLink(activeLink);
+    return;
+  }
+
   if (contentId === "copsoq-questionnaire") {
     if (typeof mountCopsoq === "function") {
       mountCopsoq(contentRoot, "fr");
@@ -2449,7 +2782,57 @@ function buildRpsGollacSankeyFigure() {
 
 // Config Plotly commune aux visualisations Sankey : ne garder que
 // l'enregistrement en image et le plein écran dans la modebar.
-function getRpsGollacSimplePlotConfig(container) {
+// Capture littérale du SVG affiché à l'écran, plutôt que Plotly.toImage/downloadImage (bouton
+// "toImage" natif) qui régénèrent une image à partir de la config figure/layout d'origine — et
+// perdraient donc le repositionnement des étiquettes appliqué après coup en DOM (cf.
+// ensureRpsGollacGroupsSankeyLabelPositions), tout comme le nom de fichier par défaut de Plotly
+// ("newplot"). Sérialise le <svg> actuellement affiché puis le redessine sur un canvas (fond
+// blanc) pour produire le PNG téléchargé, avec un nom de fichier cohérent avec le reste de
+// l'application (préfixe-timestamp.png, cf. getKarasekPlotConfig/toImageButtonOptions).
+async function downloadRpsGollacSankeySnapshot(container, filenamePrefix) {
+  const svg = container.querySelector("svg.main-svg");
+  if (!svg) {
+    throw new Error("Le graphique n'est pas disponible.");
+  }
+  const width = Math.round(svg.getBoundingClientRect().width);
+  const height = Math.round(svg.getBoundingClientRect().height);
+  const svgClone = svg.cloneNode(true);
+  svgClone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  svgClone.setAttribute("width", width);
+  svgClone.setAttribute("height", height);
+  const serialized = new XMLSerializer().serializeToString(svgClone);
+  const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(serialized)}`;
+  const image = await loadPlotExportImage(svgDataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+  const link = document.createElement("a");
+  link.href = canvas.toDataURL("image/png");
+  link.download = `${filenamePrefix}-${Date.now()}.png`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+function getRpsGollacSankeyExportButton(container, filenamePrefix) {
+  return {
+    name: "downloadSankeySnapshot",
+    title: "Sauvegarder l'image en PNG",
+    icon: plotImageExportIcon,
+    click: () => {
+      downloadRpsGollacSankeySnapshot(container, filenamePrefix).catch((error) => {
+        console.error("Sankey image export failed.", error);
+        alert("Impossible d'enregistrer l'image du diagramme.");
+      });
+    },
+  };
+}
+
+function getRpsGollacSimplePlotConfig(container, filenamePrefix = "rps-gollac") {
   return {
     responsive: true,
     displaylogo: false,
@@ -2468,8 +2851,10 @@ function getRpsGollacSimplePlotConfig(container) {
       "hoverCompareCartesian",
       "resetSankeyGroup",
       "hoverClosestSankey",
+      "toImage",
     ],
     modeBarButtonsToAdd: [
+      getRpsGollacSankeyExportButton(container, filenamePrefix),
       {
         name: "fullscreen",
         title: "Visualiser en plein écran",
@@ -2510,7 +2895,7 @@ function renderRpsGollacSankey(plotId) {
   // min-height CSS (bien plus petit) au moindre redimensionnement, masquant les nœuds.
   container.style.height = `${height}px`;
   ensureCopsoqFullscreenBehavior(container);
-  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container)).then(() =>
+  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container, "rapprochement-rps-referentiel")).then(() =>
     ensureRpsGollacSankeyHoverHighlight(container),
   );
 }
@@ -2711,7 +3096,7 @@ function computeRpsGollacCorrespondanceScores(karasekFiles, copsoqFiles) {
   return { echelleScores, domainScores, axisScores, karasekDimScores };
 }
 
-function buildRpsGollacCorrespondanceSankeyFigure(scores, linkColorOverride = null) {
+function buildRpsGollacCorrespondanceSankeyFigure(scores, linkColorOverride = null, domainAxisGapPx = 22) {
   const { copsoqEchelles, copsoqDomains, sortedKarasekDims } = getRpsGollacCorrespondenceEntries();
   const { echelleScores, domainScores, axisScores, karasekDimScores } = scores;
   const referenceCount = Math.max(
@@ -2725,8 +3110,8 @@ function buildRpsGollacCorrespondanceSankeyFigure(scores, linkColorOverride = nu
     (domain) => copsoqEchelles.filter(([echelle]) => getCopsoqDomainByEchelle()[echelle] === domain).length,
   );
   const axisWeights = rpsGollacAxes.map((axis) => copsoqEchelles.filter(([, echelleAxis]) => echelleAxis === axis).length);
-  const domainY = stackRpsGollacSankeyColumnByWeight(domainWeights, copsoqEchelles.length, height);
-  const axisY = stackRpsGollacSankeyColumnByWeight(axisWeights, copsoqEchelles.length, height);
+  const domainY = stackRpsGollacSankeyColumnByWeight(domainWeights, copsoqEchelles.length, height, domainAxisGapPx);
+  const axisY = stackRpsGollacSankeyColumnByWeight(axisWeights, copsoqEchelles.length, height, domainAxisGapPx);
 
   const nodeLabels = [];
   const nodeX = [];
@@ -2847,7 +3232,7 @@ function buildRpsGollacCorrespondanceSankeyFigure(scores, linkColorOverride = nu
   };
 }
 
-function renderRpsGollacCorrespondanceSankey(plotId, scores) {
+function renderRpsGollacCorrespondanceSankey(plotId, scores, filenamePrefix = "rapprochement-rps") {
   const container = document.getElementById(plotId);
   if (!container || typeof Plotly === "undefined") {
     return;
@@ -2862,7 +3247,7 @@ function renderRpsGollacCorrespondanceSankey(plotId, scores) {
   };
   container.style.height = `${height}px`;
   ensureCopsoqFullscreenBehavior(container);
-  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container)).then(() =>
+  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container, filenamePrefix)).then(() =>
     ensureRpsGollacSankeyHoverHighlight(container),
   );
 }
@@ -3012,7 +3397,7 @@ function renderRpsGollacIndividualView() {
       karasekResult ? [karasekResult] : [],
       copsoqResult ? [copsoqResult] : [],
     );
-    renderRpsGollacCorrespondanceSankey("rps-gollac-individual-sankey", correspondanceScores);
+    renderRpsGollacCorrespondanceSankey("rps-gollac-individual-sankey", correspondanceScores, "rapprochement-rps-individuel");
   }
 
   karasekBtn.addEventListener("click", () => karasekInput.click());
@@ -3253,7 +3638,11 @@ function renderRpsGollacMultiIndividualsView() {
     comparisonHost.innerHTML = "";
     comparisonHost.append(buildRpsGollacMultiStatsTable(karasekStats, copsoqStats));
     const correspondanceScores = computeRpsGollacCorrespondanceScores(rpsMultiKarasekFiles, rpsMultiCopsoqFiles);
-    renderRpsGollacCorrespondanceSankey("rps-gollac-multi-individus-sankey", correspondanceScores);
+    renderRpsGollacCorrespondanceSankey(
+      "rps-gollac-multi-individus-sankey",
+      correspondanceScores,
+      "rapprochement-rps-multi-individus",
+    );
     detailsHost.innerHTML = "";
     detailsHost.append(
       buildRpsGollacGroupsFileDetails([...rpsMultiKarasekBatches, ...rpsMultiCopsoqBatches], { showSwatch: false }),
@@ -3336,13 +3725,9 @@ function renderRpsGollacMultiIndividualsView() {
   scrollToPageTop();
 }
 
-function buildRpsGollacGroupsTable(entries, onSelectLot) {
-  const wrap = document.createElement("div");
-  wrap.className = "results-table-wrap";
-  const table = document.createElement("table");
-  table.className = "results-table";
-  table.style.width = "auto";
-
+// Associe les lots Karasek-Siegrist et COPSOQ chargés dans "Rapprochement RPS de groupes" par
+// numéro de lot (ex. "Lot 3"), pour reconstituer les paires karasek/copsoq d'un même lot.
+function getRpsGollacGroupLots(entries) {
   const lotsByType = { karasek: new Map(), copsoq: new Map() };
   entries.forEach((entry) => {
     const match = /Lot (\d+)/.exec(entry.label);
@@ -3351,7 +3736,24 @@ function buildRpsGollacGroupsTable(entries, onSelectLot) {
     }
     lotsByType[entry.type].set(Number(match[1]), entry);
   });
-  const sortedLots = [...new Set([...lotsByType.karasek.keys(), ...lotsByType.copsoq.keys()])].sort((a, b) => a - b);
+  const sortedLotNumbers = [...new Set([...lotsByType.karasek.keys(), ...lotsByType.copsoq.keys()])].sort(
+    (a, b) => a - b,
+  );
+  return sortedLotNumbers.map((lotNumber) => {
+    const karasekEntry = lotsByType.karasek.get(lotNumber);
+    const copsoqEntry = lotsByType.copsoq.get(lotNumber);
+    return { lotNumber, karasekEntry, copsoqEntry, color: (karasekEntry || copsoqEntry).color };
+  });
+}
+
+function buildRpsGollacGroupsTable(entries) {
+  const wrap = document.createElement("div");
+  wrap.className = "results-table-wrap";
+  const table = document.createElement("table");
+  table.className = "results-table";
+  table.style.width = "auto";
+
+  const lots = getRpsGollacGroupLots(entries);
   const columnCount = 1 + rpsStatKeys.length * 3;
 
   const thead = document.createElement("thead");
@@ -3388,7 +3790,7 @@ function buildRpsGollacGroupsTable(entries, onSelectLot) {
     axisCell.style.backgroundColor = "#eef5fa";
     axisRow.append(axisCell);
     tbody.append(axisRow);
-    if (!sortedLots.length) {
+    if (!lots.length) {
       const emptyRow = document.createElement("tr");
       const emptyCell = document.createElement("td");
       emptyCell.colSpan = columnCount;
@@ -3397,12 +3799,9 @@ function buildRpsGollacGroupsTable(entries, onSelectLot) {
       tbody.append(emptyRow);
       return;
     }
-    sortedLots.forEach((lotNumber) => {
-      const karasekEntry = lotsByType.karasek.get(lotNumber);
-      const copsoqEntry = lotsByType.copsoq.get(lotNumber);
+    lots.forEach(({ lotNumber, karasekEntry, copsoqEntry, color: lotColor }) => {
       const row = document.createElement("tr");
       const groupCell = document.createElement("td");
-      const lotColor = (karasekEntry || copsoqEntry).color;
       const swatch = document.createElement("span");
       swatch.style.display = "inline-block";
       swatch.style.width = "10px";
@@ -3410,11 +3809,6 @@ function buildRpsGollacGroupsTable(entries, onSelectLot) {
       swatch.style.borderRadius = "50%";
       swatch.style.marginRight = "4px";
       swatch.style.backgroundColor = lotColor;
-      if (onSelectLot) {
-        swatch.style.cursor = "pointer";
-        swatch.title = `Afficher le diagramme Sankey du Lot ${lotNumber}`;
-        swatch.addEventListener("click", () => onSelectLot(lotNumber, karasekEntry, copsoqEntry));
-      }
       groupCell.append(swatch, document.createTextNode(`Lot ${lotNumber}`));
       row.append(groupCell);
       rpsStatKeys.forEach((statKey) => {
@@ -3445,6 +3839,8 @@ function buildRpsGollacGroupsTable(entries, onSelectLot) {
 // Sankey d'un seul lot de "Rapprochement RPS de groupes" : mêmes nœuds/couleurs de score que le
 // Sankey de correspondance, mais les liens reprennent la couleur du repère du lot (au lieu
 // d'être colorés par score) pour rester identifiables comme appartenant à ce lot précis.
+// Étiquettes positionnées comme la vue superposant tous les lots (cf.
+// ensureRpsGollacGroupsSankeyLabelPositions), pour les mêmes raisons de lisibilité.
 function renderRpsGollacGroupSankey(plotId, karasekEntry, copsoqEntry, lotColor) {
   const container = document.getElementById(plotId);
   if (!container || typeof Plotly === "undefined") {
@@ -3454,19 +3850,495 @@ function renderRpsGollacGroupSankey(plotId, karasekEntry, copsoqEntry, lotColor)
     karasekEntry ? karasekEntry.files : [],
     copsoqEntry ? copsoqEntry.files : [],
   );
-  const figure = buildRpsGollacCorrespondanceSankeyFigure(scores, hexToRgba(lotColor, 0.55));
+  // Gap de 40 (au lieu du défaut 22) : les étiquettes Domaines/Axes sont désormais placées
+  // au-dessus de leur nœud (cf. ensureRpsGollacGroupsSankeyLabelPositions), il leur faut donc
+  // plus de place que pour les autres Sankey qui gardent l'espacement/positionnement par défaut.
+  const figure = buildRpsGollacCorrespondanceSankeyFigure(scores, hexToRgba(lotColor, 0.55), 40);
   const height = getRpsGollacSankeyHeight();
   const layout = {
     autosize: true,
     height,
     font: { size: 12 },
-    margin: { l: 10, r: 10, t: RPS_GOLLAC_SANKEY_MARGIN, b: RPS_GOLLAC_SANKEY_MARGIN },
+    margin: getRpsGollacGroupsSankeyMargin(),
   };
   container.style.height = `${height}px`;
   ensureCopsoqFullscreenBehavior(container);
-  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container)).then(() =>
-    ensureRpsGollacSankeyHoverHighlight(container),
+  const nodeColumnByIndex = getRpsGollacSankeyNodeColumnByIndex();
+  const lotLabelMatch = /Lot (\d+)/.exec((karasekEntry || copsoqEntry || {}).label || "");
+  const filenamePrefix = lotLabelMatch ? `rapprochement-rps-groupes-lot-${lotLabelMatch[1]}` : "rapprochement-rps-groupes-lot";
+  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container, filenamePrefix)).then(() => {
+    const reapplyLotCustomization = () => {
+      ensureRpsGollacGroupsSankeyLabelPositions(container, nodeColumnByIndex);
+      ensureRpsGollacSankeyHoverHighlight(container);
+    };
+    reapplyLotCustomization();
+    // cf. renderRpsGollacGroupsOverlaySankey : le plein écran régénère les nœuds/liens SVG et
+    // perdrait sinon le positionnement personnalisé des étiquettes.
+    if (typeof container.on === "function") {
+      container.on("plotly_relayout", reapplyLotCustomization);
+    }
+  });
+}
+
+// Sankey superposant TOUS les lots de "Rapprochement RPS de groupes" en un seul diagramme :
+// un même nœud (échelle/domaine/axe/dimension) est partagé par tous les lots (couleur neutre,
+// un seul jeu d'étiquettes), mais chaque lot ajoute son propre lien entre chaque paire de
+// nœuds. Plotly répartit alors les liens qui partagent la même paire source/cible en bandes
+// distinctes côte à côte (pas de superposition) : c'est ce comportement, propre à un unique
+// trace Sankey, qui permet de distinguer chaque lot — des traces Sankey séparées superposées
+// dans le même domaine dessineraient au contraire des liens strictement identiques (mêmes
+// nœuds/positions), donc totalement confondus quelle que soit leur opacité.
+// Chaque lien est coloré selon le score (même échelle de couleur que les autres Sankey de
+// "Rapprochement RPS"), pas selon le lot : un fin contour noir sur tous les liens (link.line)
+// permet de distinguer les bandes de lots superposées dans l'ordre de chargement, y compris
+// quand deux lots voisins ont un score proche (donc une couleur de remplissage proche).
+function buildRpsGollacGroupsOverlaySankeyFigure(lots) {
+  const { copsoqEchelles, copsoqDomains, sortedKarasekDims } = getRpsGollacCorrespondenceEntries();
+  // Chaque nœud reçoit désormais jusqu'à `lotCount` liens (un par lot) au lieu d'un seul : il
+  // faut donc gonfler d'autant les poids utilisés pour caler les colonnes Domaines/Axes (cf.
+  // stackRpsGollacSankeyColumnByWeight) sous peine de chevauchement des nœuds les plus chargés.
+  const lotCount = Math.max(lots.length, 1);
+  const referenceCount = Math.max(
+    copsoqEchelles.length,
+    copsoqDomains.length,
+    rpsGollacAxes.length,
+    sortedKarasekDims.length,
   );
+  const height = getRpsGollacSankeyHeight();
+  const domainWeights = copsoqDomains.map(
+    (domain) =>
+      copsoqEchelles.filter(([echelle]) => getCopsoqDomainByEchelle()[echelle] === domain).length * lotCount,
+  );
+  const axisWeights = rpsGollacAxes.map(
+    (axis) => copsoqEchelles.filter(([, echelleAxis]) => echelleAxis === axis).length * lotCount,
+  );
+  // Espace vertical accru (40px par lot chargé, au lieu des 22 par défaut) : les étiquettes de
+  // ces deux colonnes sont désormais placées AU-DESSUS de chaque nœud
+  // (ensureRpsGollacGroupsSankeyLabelPositions), et chaque nœud grandit lui-même avec le
+  // nombre de lots (davantage de liens empilés le traversent) — un espacement fixe suffisant à
+  // 1 lot ne l'est donc plus dès qu'un 2e lot est chargé ; le multiplier par `lotCount` compense.
+  const domainY = stackRpsGollacSankeyColumnByWeight(domainWeights, copsoqEchelles.length * lotCount, height, 40 * lotCount);
+  const axisY = stackRpsGollacSankeyColumnByWeight(axisWeights, copsoqEchelles.length * lotCount, height, 40 * lotCount);
+
+  const nodeLabels = [];
+  const nodeX = [];
+  const nodeY = [];
+  const nodeColor = [];
+  const nodeIndexByKey = new Map();
+  const spreadY = (index, count) => getRpsGollacSankeyNodeY(index, count, referenceCount);
+  const spreadYKarasek = (index, count) => getRpsGollacSankeyNodeY(index, count, referenceCount, 0.06, 0.94, 1.4);
+  const addNode = (key, label, x, y) => {
+    nodeIndexByKey.set(key, nodeLabels.length);
+    nodeLabels.push(label);
+    nodeX.push(x);
+    nodeY.push(y);
+    nodeColor.push(RPS_GOLLAC_NO_SCORE_COLOR);
+  };
+
+  copsoqEchelles.forEach(([echelle], index) => {
+    addNode(`echelle:${echelle}`, echelle, 0.01, spreadY(index, copsoqEchelles.length));
+  });
+  copsoqDomains.forEach((domain, index) => {
+    addNode(`domain:${domain}`, domain, 0.28, domainY[index]);
+  });
+  rpsGollacAxes.forEach((axis, index) => {
+    addNode(`axis:${axis}`, axis, 0.56, axisY[index]);
+  });
+  sortedKarasekDims.forEach((dim, index) => {
+    addNode(`karasek:${dim.label}`, dim.label, 0.99, spreadYKarasek(index, sortedKarasekDims.length));
+  });
+
+  const linkSource = [];
+  const linkTarget = [];
+  const linkValue = [];
+  const linkColor = [];
+  const linkLot = [];
+  const addLink = (sourceKey, targetKey, color, lotNumber, value = 1) => {
+    if (!nodeIndexByKey.has(sourceKey) || !nodeIndexByKey.has(targetKey)) {
+      return;
+    }
+    linkSource.push(nodeIndexByKey.get(sourceKey));
+    linkTarget.push(nodeIndexByKey.get(targetKey));
+    linkValue.push(value);
+    linkColor.push(color);
+    linkLot.push(lotNumber);
+  };
+
+  // Couleur de chaque nœud pour un lot donné (utilisée uniquement au survol d'un lien de ce
+  // lot, cf. ensureRpsGollacGroupsOverlayHover) : reprend exactement la même correspondance
+  // nœud -> score que buildRpsGollacCorrespondanceSankeyFigure (échelle/domaine/axe colorés par
+  // leur propre score, dimension Karasek-Siegrist par son propre score).
+  const nodeColorByLot = new Map();
+
+  lots.forEach((lot) => {
+    const { echelleScores, domainScores, axisScores, karasekDimScores } = computeRpsGollacCorrespondanceScores(
+      lot.karasekEntry ? lot.karasekEntry.files : [],
+      lot.copsoqEntry ? lot.copsoqEntry.files : [],
+    );
+    const lotNodeColors = new Map();
+    copsoqEchelles.forEach(([echelle]) => {
+      const score = echelleScores[echelle];
+      if (Number.isFinite(score)) {
+        lotNodeColors.set(nodeIndexByKey.get(`echelle:${echelle}`), getRpsGollacItemColor(score));
+      }
+    });
+    copsoqDomains.forEach((domain) => {
+      const score = domainScores[domain];
+      if (Number.isFinite(score)) {
+        lotNodeColors.set(nodeIndexByKey.get(`domain:${domain}`), getRpsGollacItemColor(score));
+      }
+    });
+    rpsGollacAxes.forEach((axis) => {
+      const score = axisScores[axis];
+      if (Number.isFinite(score)) {
+        lotNodeColors.set(nodeIndexByKey.get(`axis:${axis}`), getRpsGollacItemColor(score));
+      }
+    });
+    sortedKarasekDims.forEach((dim) => {
+      const score = karasekDimScores[dim.label];
+      if (Number.isFinite(score)) {
+        lotNodeColors.set(nodeIndexByKey.get(`karasek:${dim.label}`), getKarasekDimensionItemColor(score));
+      }
+    });
+    nodeColorByLot.set(lot.lotNumber, lotNodeColors);
+
+    copsoqEchelles.forEach(([echelle]) => {
+      const score = echelleScores[echelle];
+      if (!Number.isFinite(score)) {
+        return;
+      }
+      addLink(
+        `echelle:${echelle}`,
+        `domain:${getCopsoqDomainByEchelle()[echelle]}`,
+        hexToRgba(getRpsGollacItemColor(score), 0.55),
+        lot.lotNumber,
+      );
+    });
+    const domainAxisCounts = new Map();
+    copsoqEchelles.forEach(([echelle, axis]) => {
+      if (!Number.isFinite(echelleScores[echelle])) {
+        return;
+      }
+      const key = `${getCopsoqDomainByEchelle()[echelle]}|${axis}`;
+      domainAxisCounts.set(key, (domainAxisCounts.get(key) || 0) + 1);
+    });
+    domainAxisCounts.forEach((count, key) => {
+      const [domain, axis] = key.split("|");
+      const score = domainScores[domain];
+      if (!Number.isFinite(score)) {
+        return;
+      }
+      addLink(`domain:${domain}`, `axis:${axis}`, hexToRgba(getRpsGollacItemColor(score), 0.55), lot.lotNumber, count);
+    });
+    sortedKarasekDims.forEach((dim) => {
+      const score = karasekDimScores[dim.label];
+      if (!Number.isFinite(score)) {
+        return;
+      }
+      addLink(
+        `axis:${dim.axis}`,
+        `karasek:${dim.label}`,
+        hexToRgba(getKarasekDimensionItemColor(score), 0.55),
+        lot.lotNumber,
+      );
+    });
+  });
+
+  return {
+    nodeColorByLot,
+    // Même ordre de construction des nœuds que ci-dessus (échelles, domaines, axes, dimensions) :
+    // réutilise le helper partagé avec le Sankey d'un seul lot plutôt que de dupliquer le calcul.
+    nodeColumnByIndex: getRpsGollacSankeyNodeColumnByIndex(),
+    data: [
+      {
+        type: "sankey",
+        orientation: "h",
+        arrangement: "fixed",
+        node: {
+          label: nodeLabels,
+          x: nodeX,
+          y: nodeY,
+          color: nodeColor,
+          pad: RPS_GOLLAC_SANKEY_NODE_PAD,
+          thickness: 14,
+          line: { color: "#ffffff", width: 0.5 },
+          hoverinfo: "skip",
+        },
+        link: {
+          source: linkSource,
+          target: linkTarget,
+          value: linkValue,
+          color: linkColor,
+          customdata: linkLot,
+          line: { color: "#000000", width: 0.5 },
+          hoverinfo: "skip",
+        },
+      },
+    ],
+  };
+}
+
+// Survol d'un lien de la vue par défaut de "Rapprochement RPS de groupes" (superposition de
+// tous les lots) : comme les nœuds sont partagés entre lots, le surlignage générique
+// (ensureRpsGollacSankeyHoverHighlight) suivrait indistinctement TOUS les lots passant par un
+// même nœud. Ici, on ne remonte/descend le chemin qu'à travers les liens du MÊME lot (identifié
+// via link.customdata), et on colore en plus, pendant le survol, les nœuds (rectangle ET
+// étiquette) de ce chemin selon le score de ce lot précis (nodeColorByLot) — le reste du
+// diagramme (gris neutre) rappelle que ces nœuds sont partagés par tous les lots hors survol.
+function ensureRpsGollacGroupsOverlayHover(container, nodeColorByLot) {
+  const linksGroup = container.querySelector("svg g.sankey-links");
+  if (!linksGroup) {
+    return;
+  }
+  const linkPaths = Array.from(linksGroup.querySelectorAll("path"));
+  const outgoingByNode = new Map();
+  const incomingByNode = new Map();
+  const pathByLink = new Map();
+  const addToMap = (map, key, path) => {
+    const list = map.get(key) || [];
+    list.push(path);
+    map.set(key, list);
+  };
+  linkPaths.forEach((path) => {
+    const link = path.__data__ && path.__data__.link;
+    if (!link) {
+      return;
+    }
+    addToMap(outgoingByNode, link.source.pointNumber, path);
+    addToMap(incomingByNode, link.target.pointNumber, path);
+    pathByLink.set(link, path);
+  });
+
+  // link.source/link.target sont des objets nœud (pas de simples index) : on normalise tout de
+  // suite en `pointNumber` (numérique), seule clé partagée avec labelByNodeIndex/colorsForLot
+  // ci-dessous — sans cela, `nodes` contiendrait des objets jamais retrouvés par ces deux Map.
+  const getConnectedLinksAndNodes = (seedLink) => {
+    const lot = seedLink.customdata;
+    const sameLot = (path) => path.__data__.link.customdata === lot;
+    const highlighted = new Set();
+    const nodes = new Set([seedLink.source.pointNumber, seedLink.target.pointNumber]);
+    const seedPath = pathByLink.get(seedLink);
+    if (seedPath) {
+      highlighted.add(seedPath);
+    }
+    const walk = (startNode, byNode, getNextNode) => {
+      const visited = new Set();
+      let frontier = [startNode];
+      while (frontier.length) {
+        const next = [];
+        frontier.forEach((nodeIndex) => {
+          if (visited.has(nodeIndex)) {
+            return;
+          }
+          visited.add(nodeIndex);
+          (byNode.get(nodeIndex) || []).filter(sameLot).forEach((path) => {
+            highlighted.add(path);
+            const nextNode = getNextNode(path.__data__.link).pointNumber;
+            nodes.add(nextNode);
+            next.push(nextNode);
+          });
+        });
+        frontier = next;
+      }
+    };
+    walk(seedLink.target.pointNumber, outgoingByNode, (l) => l.target);
+    walk(seedLink.source.pointNumber, incomingByNode, (l) => l.source);
+    return { highlighted, nodes, lot };
+  };
+
+  // Le DOM ne rend que les nœuds traversés par au moins un lien, et pas forcément dans l'ordre
+  // des tableaux d'origine : il faut donc indexer par `node.pointNumber` (index réel, celui
+  // référencé par link.source/link.target) plutôt que par l'ordre d'itération du DOM.
+  const nodeGroups = Array.from(container.querySelectorAll("svg g.sankey-node"));
+  const labelByNodeIndex = new Map();
+  const rectByNodeIndex = new Map();
+  nodeGroups.forEach((group) => {
+    const node = group.__data__ && group.__data__.node;
+    const label = group.querySelector("text.node-label");
+    const rect = group.querySelector("rect.node-rect");
+    if (!label || !rect || !node) {
+      return;
+    }
+    if (!label.dataset.baseFill) {
+      label.dataset.baseFill = label.style.fill;
+    }
+    if (!rect.dataset.baseFill) {
+      rect.dataset.baseFill = rect.style.fill;
+    }
+    labelByNodeIndex.set(node.pointNumber, label);
+    rectByNodeIndex.set(node.pointNumber, rect);
+  });
+
+  const applyHighlight = (highlighted, nodes, lot) => {
+    linkPaths.forEach((otherPath) => {
+      otherPath.style.opacity = highlighted.has(otherPath) ? "1" : "0.12";
+    });
+    const colorsForLot = nodeColorByLot.get(lot);
+    if (!colorsForLot) {
+      return;
+    }
+    nodes.forEach((nodeIndex) => {
+      const label = labelByNodeIndex.get(nodeIndex);
+      const rect = rectByNodeIndex.get(nodeIndex);
+      const color = colorsForLot.get(nodeIndex);
+      if (!color) {
+        return;
+      }
+      if (label) {
+        label.style.fill = color;
+        label.style.fontWeight = "700";
+      }
+      if (rect) {
+        rect.style.fill = color;
+      }
+    });
+  };
+  const resetHighlight = () => {
+    linkPaths.forEach((otherPath) => {
+      otherPath.style.opacity = "";
+    });
+    labelByNodeIndex.forEach((label) => {
+      label.style.fill = label.dataset.baseFill;
+      label.style.fontWeight = "";
+    });
+    rectByNodeIndex.forEach((rect) => {
+      rect.style.fill = rect.dataset.baseFill;
+    });
+  };
+
+  linkPaths.forEach((path) => {
+    path.addEventListener("mouseover", () => {
+      const { highlighted, nodes, lot } = getConnectedLinksAndNodes(path.__data__.link);
+      applyHighlight(highlighted, nodes, lot);
+    });
+    path.addEventListener("mouseout", resetHighlight);
+  });
+}
+
+// Place l'étiquette de chaque nœud à l'écart des rubans qui s'y attachent plutôt qu'à
+// l'emplacement par défaut de Plotly (à droite pour un nœud de gauche, à gauche pour un nœud de
+// droite — soit précisément le côté PAR OÙ passent les rubans entrants/sortants) : à gauche pour
+// les échelles COPSOQ (les rubans sortent par la droite), à droite pour les dimensions
+// Karasek-Siegrist (les rubans entrent par la gauche), et au-dessus pour les domaines COPSOQ /
+// facteurs Gollac-INRS (colonnes du milieu, avec des rubans des deux côtés). Cela évite qu'une
+// étiquette colorée se retrouve peu lisible sur un ruban/nœud de couleur proche. Utilisé par les
+// deux vues Sankey de "Rapprochement RPS de groupes" (superposition de tous les lots et détail
+// d'un seul lot).
+function ensureRpsGollacGroupsSankeyLabelPositions(container, nodeColumnByIndex) {
+  const nodeGroups = Array.from(container.querySelectorAll("svg g.sankey-node"));
+  nodeGroups.forEach((group) => {
+    const node = group.__data__ && group.__data__.node;
+    const label = group.querySelector("text.node-label");
+    const rect = group.querySelector("rect.node-rect");
+    if (!node || !label || !rect) {
+      return;
+    }
+    const width = parseFloat(rect.getAttribute("width")) || 0;
+    const height = parseFloat(rect.getAttribute("height")) || 0;
+    const column = nodeColumnByIndex.get(node.pointNumber);
+    if (column === "domain" || column === "axis") {
+      label.setAttribute("text-anchor", "middle");
+      label.setAttribute("transform", `translate(${width / 2}, -6)`);
+    } else if (column === "karasek") {
+      label.setAttribute("text-anchor", "start");
+      label.setAttribute("transform", `translate(${width + 6}, ${height / 2 + 4})`);
+    } else if (column === "echelle") {
+      label.setAttribute("text-anchor", "end");
+      label.setAttribute("transform", `translate(${-6}, ${height / 2 + 4})`);
+    }
+  });
+}
+
+// Colonne (échelle/domaine/axe/dimension) de chaque index de nœud, dans l'ordre commun aux deux
+// figures Sankey de "Rapprochement RPS de groupes" (échelles, puis domaines, puis axes, puis
+// dimensions Karasek-Siegrist) — sert de base à ensureRpsGollacGroupsSankeyLabelPositions pour la
+// vue détail d'un seul lot (buildRpsGollacCorrespondanceSankeyFigure n'a pas sa propre carte de
+// colonnes, contrairement à buildRpsGollacGroupsOverlaySankeyFigure qui construit la sienne).
+function getRpsGollacSankeyNodeColumnByIndex() {
+  const { copsoqEchelles, copsoqDomains, sortedKarasekDims } = getRpsGollacCorrespondenceEntries();
+  const nodeColumnByIndex = new Map();
+  let index = 0;
+  copsoqEchelles.forEach(() => nodeColumnByIndex.set(index++, "echelle"));
+  copsoqDomains.forEach(() => nodeColumnByIndex.set(index++, "domain"));
+  rpsGollacAxes.forEach(() => nodeColumnByIndex.set(index++, "axis"));
+  sortedKarasekDims.forEach(() => nodeColumnByIndex.set(index++, "karasek"));
+  return nodeColumnByIndex;
+}
+
+// Largeur (px) d'une étiquette avec la même police que celle utilisée par Plotly pour les
+// nœuds Sankey (cf. le <text class="node-label"> rendu : "Open Sans", verdana, arial,
+// sans-serif, 12px) — sert à dimensionner les marges gauche/droite des Sankey de
+// "Rapprochement RPS de groupes" en fonction du texte réellement affiché, puisque les
+// étiquettes Échelles/Karasek-Siegrist y débordent désormais du nœud vers l'extérieur du
+// graphique (cf. ensureRpsGollacGroupsSankeyLabelPositions) au lieu de rester dans la marge par
+// défaut de Plotly (trop étroite, ce qui les tronquait).
+function measureRpsGollacSankeyLabelWidth(text) {
+  if (!measureRpsGollacSankeyLabelWidth.ctx) {
+    measureRpsGollacSankeyLabelWidth.ctx = document.createElement("canvas").getContext("2d");
+    measureRpsGollacSankeyLabelWidth.ctx.font = '12px "Open Sans", verdana, arial, sans-serif';
+  }
+  return measureRpsGollacSankeyLabelWidth.ctx.measureText(text).width;
+}
+
+// Marges gauche/droite communes aux deux Sankey de "Rapprochement RPS de groupes" (calées sur la
+// plus longue étiquette Échelle/Karasek-Siegrist + le décalage hors du nœud, cf.
+// ensureRpsGollacGroupsSankeyLabelPositions) plutôt que la marge fixe des autres Sankey de
+// l'application.
+function getRpsGollacGroupsSankeyMargin() {
+  const { copsoqEchelles, sortedKarasekDims } = getRpsGollacCorrespondenceEntries();
+  const echelleMaxWidth = copsoqEchelles.reduce(
+    (max, [echelle]) => Math.max(max, measureRpsGollacSankeyLabelWidth(echelle)),
+    0,
+  );
+  const karasekMaxWidth = sortedKarasekDims.reduce(
+    (max, dim) => Math.max(max, measureRpsGollacSankeyLabelWidth(dim.label)),
+    0,
+  );
+  return {
+    l: Math.ceil(echelleMaxWidth) + 16,
+    r: Math.ceil(karasekMaxWidth) + 30,
+    t: RPS_GOLLAC_SANKEY_MARGIN,
+    b: RPS_GOLLAC_SANKEY_MARGIN,
+  };
+}
+
+function renderRpsGollacGroupsOverlaySankey(plotId, entries) {
+  const container = document.getElementById(plotId);
+  if (!container || typeof Plotly === "undefined") {
+    return;
+  }
+  const lots = getRpsGollacGroupLots(entries);
+  if (!lots.length) {
+    if (container.dataset.plotlyInitialized) {
+      Plotly.purge(container);
+      delete container.dataset.plotlyInitialized;
+    }
+    return;
+  }
+  const figure = buildRpsGollacGroupsOverlaySankeyFigure(lots);
+  const height = getRpsGollacSankeyHeight();
+  const layout = {
+    autosize: true,
+    height,
+    font: { size: 12 },
+    margin: getRpsGollacGroupsSankeyMargin(),
+  };
+  container.style.height = `${height}px`;
+  container.dataset.plotlyInitialized = "true";
+  ensureCopsoqFullscreenBehavior(container);
+  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container, "rapprochement-rps-groupes")).then(() => {
+    const reapplyOverlayCustomization = () => {
+      ensureRpsGollacGroupsSankeyLabelPositions(container, figure.nodeColumnByIndex);
+      ensureRpsGollacGroupsOverlayHover(container, figure.nodeColorByLot);
+    };
+    reapplyOverlayCustomization();
+    // Entrer/sortir du plein écran (bouton de la barre d'outils, cf. ensureCopsoqFullscreenBehavior)
+    // déclenche un Plotly.relayout + resize qui régénère entièrement les nœuds/liens SVG : sans ce
+    // hook, le repositionnement des étiquettes et le survol par lot personnalisés y seraient perdus.
+    if (typeof container.on === "function") {
+      container.on("plotly_relayout", reapplyOverlayCustomization);
+    }
+  });
 }
 
 function buildRpsGollacGroupsListColumn(entries, type, formatEntry, { showSwatch = true } = {}) {
@@ -3547,7 +4419,7 @@ function renderRpsGollacGroupsView() {
   const intro = document.createElement("article");
   intro.className = "content-card";
   intro.innerHTML =
-    "<p>Chaque ajout de fichiers Karasek-Siegrist ou COPSOQ Français crée un nouveau groupe (un « lot »), avec ses propres statistiques (moyenne, médiane, minimum, maximum). Cliquez sur le repère coloré d'un lot dans le tableau « Comparaison des groupes » pour afficher son diagramme Sankey (liens colorés selon le lot, étiquettes colorées selon le score).</p>";
+    "<p>Chaque ajout de fichiers Karasek-Siegrist ou COPSOQ Français crée un nouveau groupe (un « lot »), avec ses propres statistiques (moyenne, médiane, minimum, maximum). Le diagramme Sankey ci-dessous superpose par défaut tous les lots à la fois (nœuds partagés, un lien par lot coloré selon son repère). Cliquez sur le bouton d'un lot pour afficher uniquement son diagramme détaillé (liens colorés selon le lot, étiquettes/nœuds colorés selon le score) ; cliquez-le à nouveau pour revenir à la vue de tous les lots.</p>";
 
   const actions = document.createElement("div");
   actions.className = "questionnaire-actions";
@@ -3580,6 +4452,9 @@ function renderRpsGollacGroupsView() {
   summaryHeading.textContent = "Fichiers chargés par lot";
   const summaryHost = document.createElement("div");
 
+  const lotButtonsHost = document.createElement("div");
+  lotButtonsHost.className = "questionnaire-actions";
+
   const resultsHeading = document.createElement("h3");
   resultsHeading.textContent = "Comparaison des groupes";
 
@@ -3592,7 +4467,7 @@ function renderRpsGollacGroupsView() {
   plotArea.className = "plot-area";
   const plotPlaceholder = document.createElement("p");
   plotPlaceholder.textContent =
-    "Cliquez sur le repère coloré d'un lot dans le tableau « Comparaison des groupes » ci-dessous pour afficher son diagramme Sankey.";
+    "Ajoutez au moins un groupe Karasek-Siegrist ou COPSOQ ci-dessus pour afficher le diagramme Sankey superposant tous les lots.";
   plotArea.append(plotPlaceholder);
   plotPanel.append(plotArea);
 
@@ -3600,18 +4475,58 @@ function renderRpsGollacGroupsView() {
   detailsHeading.textContent = "Détail des fichiers par lot";
   const detailsHost = document.createElement("div");
 
-  function showLotSankey(lotNumber, karasekEntry, copsoqEntry) {
-    const lotColor = (karasekEntry || copsoqEntry).color;
-    renderRpsGollacGroupSankey("rps-gollac-groups-sankey", karasekEntry, copsoqEntry, lotColor);
+  // null = vue par défaut (tous les lots superposés) ; sinon numéro du lot affiché seul.
+  let selectedLotNumber = null;
+
+  function renderPlot() {
+    const lots = getRpsGollacGroupLots(rpsGroupEntries);
+    const selectedLot = selectedLotNumber != null ? lots.find((lot) => lot.lotNumber === selectedLotNumber) : null;
+    if (selectedLot) {
+      renderRpsGollacGroupSankey(
+        "rps-gollac-groups-sankey",
+        selectedLot.karasekEntry,
+        selectedLot.copsoqEntry,
+        selectedLot.color,
+      );
+    } else {
+      selectedLotNumber = null;
+      renderRpsGollacGroupsOverlaySankey("rps-gollac-groups-sankey", rpsGroupEntries);
+    }
+  }
+
+  function renderLotButtons() {
+    lotButtonsHost.innerHTML = "";
+    getRpsGollacGroupLots(rpsGroupEntries).forEach((lot) => {
+      const isSelected = selectedLotNumber === lot.lotNumber;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "secondary-btn";
+      button.textContent = isSelected ? "Afficher tous les lots" : `Afficher uniquement le lot ${lot.lotNumber}`;
+      const backgroundColor = isSelected ? RPS_GOLLAC_NO_SCORE_COLOR : lot.color;
+      // `.secondary-btn` définit `background` (un dégradé) en CSS : une simple `background-color`
+      // inline resterait invisible sous ce dégradé opaque, il faut donc écraser le raccourci
+      // `background` lui-même pour que la couleur du lot soit bien celle affichée.
+      button.style.background = backgroundColor;
+      button.style.borderColor = backgroundColor;
+      button.style.color = getContrastTextColor(backgroundColor);
+      button.addEventListener("click", () => {
+        selectedLotNumber = isSelected ? null : lot.lotNumber;
+        renderLotButtons();
+        renderPlot();
+      });
+      lotButtonsHost.append(button);
+    });
   }
 
   function refresh() {
     summaryHost.innerHTML = "";
     summaryHost.append(buildRpsGollacGroupsSummary(rpsGroupEntries));
     comparisonHost.innerHTML = "";
-    comparisonHost.append(buildRpsGollacGroupsTable(rpsGroupEntries, showLotSankey));
+    comparisonHost.append(buildRpsGollacGroupsTable(rpsGroupEntries));
     detailsHost.innerHTML = "";
     detailsHost.append(buildRpsGollacGroupsFileDetails(rpsGroupEntries));
+    renderLotButtons();
+    renderPlot();
   }
 
   karasekBtn.addEventListener("click", () => karasekInput.click());
@@ -3678,6 +4593,7 @@ function renderRpsGollacGroupsView() {
     actions,
     summaryHeading,
     summaryHost,
+    lotButtonsHost,
     plotPanel,
     resultsHeading,
     comparisonHost,
