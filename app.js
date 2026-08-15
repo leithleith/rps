@@ -12,11 +12,21 @@ const menuData = [
   {
     label: "COPSOQ",
     submenu: [
-      "Questionnaire",
-      "Importer un fichier / Import a file",
-      "Importer plusieurs fichiers (individus) / Import multiple files (individuals)",
-      "Importer plusieurs fichiers (groupe) / Import multiple files (group)",
-      "Référentiel",
+      { id: "questionnaire-fr", label: "Questionnaire", lang: "fr" },
+      { id: "import-single-fr", label: "Importer un fichier", lang: "fr" },
+      { id: "import-individuals-fr", label: "Importer plusieurs fichiers (individus)", lang: "fr" },
+      { id: "import-group-fr", label: "Importer plusieurs fichiers (groupes)", lang: "fr" },
+      { id: "questionnaire-en", label: "Questionnaire", lang: "en" },
+      { id: "import-single-en", label: "Import a file", lang: "en" },
+      { id: "import-individuals-en", label: "Import multiple files (individuals)", lang: "en" },
+      { id: "import-group-en", label: "Import multiple files (groups)", lang: "en" },
+      {
+        id: "referentiel",
+        parts: [
+          { lang: "fr", text: "Référentiel" },
+          { lang: "en", text: "References" },
+        ],
+      },
     ],
   },
   {
@@ -28,39 +38,25 @@ const menuData = [
       "Référentiel",
     ],
   },
-  {
-    label: "A propos",
-    submenu: [],
-  },
-  {
-    label: "Aide",
-    submenu: [],
-  },
-  {
-    label: "GitHub",
-    submenu: [],
-  },
-  {
-    label: "CC BY-NC-ND 4.0",
-    submenu: [],
-  },
 ];
 const externalMenuLinks = {
-  github: "https://github.com/leithleith/RPS",
-  "cc-by-nc-nd-4-0": "https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.fr",
+  github: "https://github.com/mattru_microsoft/RPS",
+  "cc-by-nc-nd-4-0": "https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.en",
 };
 const menuRoot = document.getElementById("menu");
 const contentRoot = document.getElementById("content");
 const installBtn = document.getElementById("installBtn");
 const menuHamburgerBtn = document.getElementById("menuHamburger");
 let deferredInstallPrompt = null;
+let karasekImportedSingle = null;
 let karasekImportedIndividuals = [];
 let karasekImportedGroupBatches = [];
 let karasekImportSingleInput = null;
 let karasekImportIndividualsInput = null;
 let karasekImportGroupInput = null;
-let copsoqImportedIndividuals = [];
-let copsoqImportedGroupBatches = [];
+let copsoqImportedSingleByLang = { fr: null, en: null };
+let copsoqImportedIndividualsByLang = { fr: [], en: [] };
+let copsoqImportedGroupBatchesByLang = { fr: [], en: [] };
 let copsoqImportSingleInput = null;
 let copsoqImportIndividualsInput = null;
 let copsoqImportGroupInput = null;
@@ -134,15 +130,19 @@ async function createPlotExportDataUrl(container, options) {
   const horizontalPadding = 48;
   const title = options.title || "Visualisation";
   const legendItems = (options.legendItems || []).filter((item) => item && item.label && item.color);
+  // "overlay-top-left" : légende incrustée en haut à gauche du graphique (ex. scatter3d Karasek-Siegrist),
+  // au lieu d'une section ajoutée sous le graphique (comportement par défaut, inchangé pour les autres exports).
+  const overlayLegend = options.legendPosition === "overlay-top-left";
   const measureCanvas = document.createElement("canvas");
   const measureContext = measureCanvas.getContext("2d");
   measureContext.font = "700 34px sans-serif";
   const titleLines = getPlotExportTextLines(measureContext, title, width - horizontalPadding * 2);
   const titleHeight = titleLines.length * 44 + 36;
-  measureContext.font = "24px sans-serif";
-  const legendTextWidth = width - horizontalPadding * 2 - 48;
+  const legendFontSize = overlayLegend ? 20 : 24;
+  measureContext.font = `${legendFontSize}px sans-serif`;
+  const legendTextWidth = overlayLegend ? 320 : width - horizontalPadding * 2 - 48;
   const legendLines = legendItems.map((item) => getPlotExportTextLines(measureContext, item.label, legendTextWidth));
-  const legendHeight = legendItems.length
+  const legendHeight = !overlayLegend && legendItems.length
     ? 58 + legendLines.reduce((height, lines) => height + Math.max(34, lines.length * 30) + 8, 0)
     : 0;
   const exportContainer = document.createElement("div");
@@ -189,7 +189,63 @@ async function createPlotExportDataUrl(container, options) {
     context.fillText(line, width / 2, 42 + index * 44);
   });
   context.drawImage(plotImage, 0, titleHeight, width, plotHeight);
-  if (legendItems.length) {
+  if (legendItems.length && overlayLegend) {
+    const boxPadding = 14;
+    const swatchSize = 16;
+    const rowGap = 10;
+    const itemFont = `${legendFontSize}px sans-serif`;
+    context.font = itemFont;
+    const rowHeights = legendLines.map((lines) => Math.max(swatchSize + 6, lines.length * 24));
+    const contentHeight = rowHeights.reduce((sum, height) => sum + height, 0) + rowGap * (legendItems.length - 1);
+    const contentWidth = Math.max(
+      ...legendItems.map((item, index) => {
+        const maxLineWidth = Math.max(...legendLines[index].map((line) => context.measureText(line).width));
+        return swatchSize + 12 + maxLineWidth;
+      }),
+    );
+    const boxWidth = contentWidth + boxPadding * 2;
+    const boxHeight = contentHeight + boxPadding * 2;
+    const boxX = horizontalPadding;
+    const boxY = titleHeight + 24;
+    const radius = 10;
+    context.beginPath();
+    context.moveTo(boxX + radius, boxY);
+    context.arcTo(boxX + boxWidth, boxY, boxX + boxWidth, boxY + boxHeight, radius);
+    context.arcTo(boxX + boxWidth, boxY + boxHeight, boxX, boxY + boxHeight, radius);
+    context.arcTo(boxX, boxY + boxHeight, boxX, boxY, radius);
+    context.arcTo(boxX, boxY, boxX + boxWidth, boxY, radius);
+    context.closePath();
+    context.fillStyle = "#ffffffe6";
+    context.fill();
+    context.strokeStyle = "#56B4E980";
+    context.lineWidth = 1;
+    context.stroke();
+
+    context.textAlign = "left";
+    let rowY = boxY + boxPadding;
+    legendItems.forEach((item, index) => {
+      const lines = legendLines[index];
+      const rowHeight = rowHeights[index];
+      context.fillStyle = item.color;
+      if (item.type === "line") {
+        context.fillRect(boxX + boxPadding, rowY + rowHeight / 2 - 2, 24, 4);
+      } else {
+        const centerX = boxX + boxPadding + swatchSize / 2;
+        const centerY = rowY + rowHeight / 2;
+        context.beginPath();
+        context.arc(centerX, centerY, swatchSize / 2, 0, Math.PI * 2);
+        context.fill();
+        context.strokeStyle = "#d1d5db";
+        context.stroke();
+      }
+      context.fillStyle = "#1f2937";
+      context.font = itemFont;
+      lines.forEach((line, lineIndex) => {
+        context.fillText(line, boxX + boxPadding + swatchSize + 12, rowY + 16 + lineIndex * 24);
+      });
+      rowY += rowHeight + rowGap;
+    });
+  } else if (legendItems.length) {
     let legendY = titleHeight + plotHeight + 42;
     context.textAlign = "left";
     context.fillStyle = "#1f2937";
@@ -456,7 +512,12 @@ const contentData = {
       "Bibliothèque graphique | Plotly.js graphing library: <a href='https://plotly.com/javascript/' target='_blank' rel='noopener noreferrer'>Plotly.js</a>",
       "Palettes de couleurs accessibles | colour-blind friendly color palettes: <a href='https://jfly.uni-koeln.de/color/#pallet' target='_blank' rel='noopener noreferrer'>Okabe-Ito</a> + <a href='https://sronpersonalpages.nl/~pault/#sec:colour_blindness' target='_blank' rel='noopener noreferrer'>Paul Tol muted</a>",
       "<a href='https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.fr' target='_blank' rel='noopener noreferrer'>Contenu sous licence CC BY-NC-ND 4.0</a> | <a href='https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.en' target='_blank' rel='noopener noreferrer'>Content under CC BY-NC-ND 4.0 licence</a>",
-      "<a href='https://opensource.org/licenses/MIT' target='_blank' rel='noopener noreferrer'>Code sous licence MIT | Code under MIT licence</a>: <a href='https://github.com/leithleith/RPS' target='_blank' rel='noopener noreferrer'><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='20' height='20'><path d='M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.263.82-.583 0-.288-.01-1.05-.015-2.06-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.238 1.84 1.238 1.07 1.835 2.807 1.305 3.492.998.108-.775.418-1.305.762-1.605-2.665-.3-5.467-1.335-5.467-5.93 0-1.31.468-2.38 1。
+      "<a href='https://opensource.org/licenses/MIT' target='_blank' rel='noopener noreferrer'>Code sous licence MIT | Code under MIT licence</a>: <a href='https://github.com/mattru_microsoft/RPS' target='_blank' rel='noopener noreferrer'><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='20' height='20'><path d='M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.263.82-.583 0-.288-.01-1.05-.015-2.06-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.238 1.84 1.238 1.07 1.835 2.807 1.305 3.492.998.108-.775.418-1.305.762-1.605-2.665-.3-5.467-1.335-5.467-5.93 0-1.31.468-2.38 1.235-3.22-.123-.303-.535-1.523.117-3.176 0 0 1.008-.322 3.3 1.23a11.52 11.52 0 013.003-.403c1.02.005 2.045.138 3.003.403 2.29-1.552 3.296-1.23 3.296-1.23.653 1.653.242 2.873.12 3.176.77.84 1.233 1.91 1.233 3.22 0 4.61-2.807 5.625-5.48 5.922.43.37.815 1.096.815 2.21 0 1.595-.015 2.88-.015 3.27 0 .322.216.698.825.58C20.565 21.795 24 17.297 24 12c0-6.63-5.37-12-12-12z'/></svg></a>",
+    ],
+  },
+};
+
+// Page « Aide » : ancien fichier statique aide.html porté dans la SPA (menu "Aide" au même
 // titre que les autres vues, plutôt qu'un lien externe vers une page séparée) — le contenu HTML
 // ci-dessous reprend celui de l'ancien fichier ; les ancres internes (#apercu, #menu, etc.)
 // fonctionnent nativement (navigateur) puisqu'il n'y a pas de routage par hash dans cette SPA.
@@ -490,7 +551,7 @@ function renderAideView() {
         <li><a href="#copsoq">Menu « COPSOQ »</a></li>
         <li><a href="#rapprochement">Menu « Rapprochement RPS »</a></li>
         <li><a href="#a-propos">« A propos »</a></li>
-        <li><a href="#github-licence">« GitHub » et « CC BY-NC-ND 4.0 »</a></li>
+        <li><a href="#github-licence">Liens « GitHub » et « CC BY-NC-ND 4.0 » (en-tête)</a></li>
         <li><a href="#couleurs">Lecture des couleurs et des scores</a></li>
         <li><a href="#scenarios">Scénarios pas-à-pas</a></li>
         <li><a href="#fichiers-exemples">Fichiers exemples utilisés dans ce guide</a></li>
@@ -509,7 +570,7 @@ function renderAideView() {
         <li>Faire le <strong>rapprochement</strong> entre les résultats Karasek-Siegrist et COPSOQ au regard des 6 facteurs du rapport « Gollac » (repris par l'INRS) ;</li>
         <li>Exporter n'importe quel graphique en image PNG et le consulter en plein écran.</li>
       </ul>
-      <p>Trois grands menus structurent l'application : <strong>Karasek-Siegrist</strong>, <strong>COPSOQ</strong> et <strong>Rapprochement RPS</strong>, chacun avec la même logique de sous-menus : <em>Questionnaire</em>, <em>Importer un fichier</em>, <em>Importer plusieurs fichiers (individus)</em>, <em>Importer plusieurs fichiers (groupe)</em>, <em>Référentiel</em> (le menu Rapprochement RPS remplace les 3 premiers sous-menus par ses propres vues de comparaison).</p>
+      <p>Trois grands menus structurent l'application : <strong>Karasek-Siegrist</strong>, <strong>COPSOQ</strong> et <strong>Rapprochement RPS</strong>. Le menu Karasek-Siegrist propose 5 sous-menus : <em>Questionnaire</em>, <em>Importer un fichier</em>, <em>Importer plusieurs fichiers (individus)</em>, <em>Importer plusieurs fichiers (groupe)</em>, <em>Référentiel</em>. Le menu COPSOQ propose ces 4 mêmes fonctionnalités mais chacune dédoublée par langue (un sous-menu préfixé d'un petit drapeau français, un sous-menu préfixé d'un globe 🌐 « International ») soit 8 sous-menus, plus un unique sous-menu bilingue <em>Référentiel / References</em> (9 sous-menus au total, la langue du questionnaire/résultat étant déterminée par le sous-menu choisi plutôt que par un sélecteur dans la page). Le menu Rapprochement RPS remplace ces sous-menus par ses propres vues de comparaison (individuel, plusieurs individus, groupes) plus un sous-menu <em>Référentiel</em>.</p>
     </section>
 
     <section class="aide-section" id="menu">
@@ -521,13 +582,14 @@ function renderAideView() {
       </figure>
       <figure>
         <img src="docs/screenshots/menu-open.png" alt="Menu ouvert, sous-menus repliés" />
-        <figcaption>Menu ouvert : 7 entrées (Karasek-Siegrist, COPSOQ, Rapprochement RPS, A propos, Aide, GitHub, CC BY-NC-ND 4.0). Les trois premières se déplient au clic pour révéler leur sous-menu.</figcaption>
+        <figcaption>Menu ouvert : 3 entrées (Karasek-Siegrist, COPSOQ, Rapprochement RPS), alignées à droite et larges seulement de ce qui est nécessaire à leur contenu, qui se déplient au clic pour révéler leur sous-menu. Les liens « A propos », « Aide », « GitHub » et « CC BY-NC-ND 4.0 » sont affichés séparément, en icônes, à gauche du bouton hamburger.</figcaption>
       </figure>
       <figure>
-        <img src="docs/screenshots/menu-open-submenu-expanded.png" alt="Sous-menu Karasek-Siegrist déplié" />
-        <figcaption>Clic sur « Karasek-Siegrist » : le sous-menu se déplie et affiche ses 5 entrées.</figcaption>
+        <img src="docs/screenshots/menu-open-submenu-expanded.png" alt="Sous-menu COPSOQ déplié" />
+        <figcaption>Clic sur « COPSOQ » : le sous-menu se déplie et affiche ses 9 entrées, chacune préfixée d'un drapeau français ou d'un globe international (sauf « Référentiel / References », bilingue et affiché une seule fois).</figcaption>
       </figure>
-      <p>Sur un écran large, le menu s'élargit pour que chaque libellé de sous-menu tienne sur le moins de lignes possible ; sur mobile, il occupe toute la largeur de l'écran.</p>
+      <p>Sur un écran large, chaque entrée du menu (et chaque sous-menu) ne prend que la largeur nécessaire à son contenu ; sur mobile, il occupe toute la largeur de l'écran.</p>
+      <p>Chaque sous-menu de type « Importer... » ouvre par défaut le sélecteur de fichiers de votre appareil. Si vous aviez déjà chargé un ou plusieurs fichiers pour ce même sous-menu (même langue comprise, pour COPSOQ), le revisiter affiche directement le contenu déjà chargé au lieu de rouvrir le sélecteur. Un bouton « Réinitialiser l'import » (fichier unique) ou « Réinitialiser les imports » (plusieurs fichiers) permet alors de charger d'autres fichiers à la place ; pour les vues multi-fichiers, un bouton « Ajouter des fichiers » permet d'en ajouter d'autres sans repartir de zéro. Ces boutons sont placés sur la même ligne que le titre de la page, alignés à droite.</p>
     </section>
 
     <section class="aide-section" id="karasek">
@@ -542,7 +604,7 @@ function renderAideView() {
       </figure>
 
       <h3 id="karasek-importer-un-fichier">3.2 « Importer un fichier »</h3>
-      <p>Ouvre un sélecteur de fichier pour recharger <strong>un seul</strong> résultat <code>.json</code> précédemment sauvegardé. La page affiche alors :</p>
+      <p>Ouvre un sélecteur de fichier pour recharger <strong>un seul</strong> résultat <code>.json</code> précédemment sauvegardé (ou réaffiche directement le fichier déjà chargé lors d'une visite précédente, avec un bouton « Réinitialiser l'import » sur la ligne du titre pour en charger un autre). La page affiche alors :</p>
       <ul class="feature-list">
         <li>le détail des réponses, regroupées par catégorie, avec un bandeau de couleur par catégorie ;</li>
         <li>le score brut (0 à 36) de chaque catégorie et sa couleur selon l'échelle à 4 niveaux <span class="badge b-green">vert</span><span class="badge b-yellow">jaune</span><span class="badge b-orange">orange</span><span class="badge b-red">rouge</span> (la même échelle que celle utilisée partout ailleurs dans l'application pour COPSOQ) ;</li>
@@ -554,14 +616,14 @@ function renderAideView() {
       </figure>
 
       <h3 id="karasek-importer-plusieurs-individus">3.3 « Importer plusieurs fichiers (individus) »</h3>
-      <p>Permet de charger plusieurs fichiers <code>.json</code> à la fois (et d'en ajouter d'autres par la suite) pour comparer plusieurs personnes : un tracé par individu, une table de statistiques (moyenne / médiane / minimum / maximum) par catégorie, et une répartition du nombre d'individus par zone.</p>
+      <p>Permet de charger plusieurs fichiers <code>.json</code> à la fois pour comparer plusieurs personnes : un tracé par individu, une table de statistiques (moyenne / médiane / minimum / maximum) par catégorie, et une répartition du nombre d'individus par zone. La liste des fichiers chargés s'affiche en bas de page ; un bouton « Ajouter des fichiers » (sur la ligne du titre) permet d'en ajouter d'autres par la suite sans perdre ce qui est déjà chargé, et un bouton « Réinitialiser les imports » repart de zéro.</p>
       <figure>
         <img src="docs/screenshots/karasek-multi-individus-result.png" alt="Comparaison multi-individus Karasek-Siegrist" />
         <figcaption>4 fichiers chargés : statistiques de groupe, répartition par zone et visualisation 3D superposant les 4 individus.</figcaption>
       </figure>
 
       <h3 id="karasek-importer-groupe">3.4 « Importer plusieurs fichiers (groupe) »</h3>
-      <p>Comme ci-dessus, mais tous les individus sont fusionnés dans une seule et même trace de groupe (au lieu d'un tracé par individu), pour visualiser l'ensemble comme une seule population.</p>
+      <p>Comme ci-dessus, mais tous les individus sont fusionnés dans une seule et même trace de groupe (au lieu d'un tracé par individu), pour visualiser l'ensemble comme une seule population. Les boutons « Ajouter des fichiers (nouveau lot) » et « Réinitialiser les imports » (ligne du titre) ainsi que la liste des fichiers chargés (bas de page) fonctionnent comme pour la vue multi-individus.</p>
       <figure>
         <img src="docs/screenshots/karasek-groupe-result.png" alt="Résultat groupe Karasek-Siegrist" />
         <figcaption>Vue « groupe » : les mêmes fichiers, agrégés en une seule population.</figcaption>
@@ -577,38 +639,43 @@ function renderAideView() {
 
     <section class="aide-section" id="copsoq">
       <h2>4. Menu « COPSOQ »</h2>
-      <p>Structure identique au menu Karasek-Siegrist, pour le questionnaire COPSOQ (disponible en français et en anglais). Les résultats COPSOQ sont organisés en <strong>Domaines</strong>, eux-mêmes composés d'<strong>Échelles</strong>.</p>
+      <p>Même logique que le menu Karasek-Siegrist, pour le questionnaire COPSOQ (disponible en français et en anglais), avec une différence importante : chacune des 4 fonctionnalités (Questionnaire, Importer un fichier, Importer plusieurs fichiers individus/groupes) existe en <strong>deux sous-menus distincts</strong>, un par langue — préfixé d'un petit drapeau français ou d'un globe 🌐 « International » — plutôt qu'un sélecteur de langue à l'intérieur de la page. Les fichiers chargés en français et en anglais sont conservés séparément : charger des fichiers via le sous-menu français n'a aucun effet sur ce qui est chargé côté anglais, et inversement. Si le fichier sélectionné est dans la mauvaise langue (par exemple un export anglais chargé depuis le sous-menu français), l'application refuse le chargement et affiche un message d'erreur explicite plutôt que de changer silencieusement de langue. Les résultats COPSOQ sont organisés en <strong>Domaines</strong>, eux-mêmes composés d'<strong>Échelles</strong>.</p>
 
-      <h3 id="copsoq-questionnaire">4.1 « Questionnaire »</h3>
+      <h3 id="copsoq-questionnaire">4.1 « Questionnaire » (drapeau français / globe international)</h3>
+      <p>Affiche le questionnaire vierge dans la langue du sous-menu choisi. Une fois toutes les questions répondues, un bouton « Sauvegarder dans un fichier » (sur la ligne du titre, à droite) permet de calculer et sauvegarder le résultat.</p>
       <figure>
         <img src="docs/screenshots/copsoq-questionnaire.png" alt="Questionnaire COPSOQ" />
-        <figcaption>Le questionnaire COPSOQ, avec sélecteur de langue et progression.</figcaption>
+        <figcaption>Le questionnaire COPSOQ en français ; la version anglaise est identique, accessible via le sous-menu « 🌐 Questionnaire ».</figcaption>
       </figure>
 
-      <h3 id="copsoq-importer-un-fichier">4.2 « Importer un fichier / Import a file »</h3>
-      <p>Recharge un résultat COPSOQ individuel et affiche :</p>
+      <h3 id="copsoq-importer-un-fichier">4.2 « Importer un fichier » (drapeau français / globe international)</h3>
+      <p>Recharge (ou réaffiche, si déjà chargé lors d'une visite précédente) un résultat COPSOQ individuel dans la langue du sous-menu choisi, et affiche :</p>
       <ul class="feature-list">
         <li>un <strong>sunburst</strong> (graphique en anneaux concentriques) : l'anneau intérieur représente les Domaines, l'anneau extérieur les Échelles, chacun coloré selon son score (échelle à 4 couleurs Okabe-Ito, pleine opacité pour les deux anneaux) ;</li>
         <li>les réponses détaillées, regroupées par Domaine puis par Échelle.</li>
       </ul>
+      <p>Un bouton « Réinitialiser l'import » (ligne du titre) permet de charger un autre fichier.</p>
       <figure>
         <img src="docs/screenshots/copsoq-single-result.png" alt="Résultat individuel COPSOQ avec sunburst" />
-        <figcaption>Résultat individuel COPSOQ : graphique sunburst Domaines/Échelles et détail des réponses.</figcaption>
+        <figcaption>Résultat individuel COPSOQ : graphique sunburst Domaines/Échelles et détail des réponses ; le titre de la page («Résultats du Questionnaire COPSOQ ») remplace le titre générique une fois un résultat affiché.</figcaption>
       </figure>
 
-      <h3 id="copsoq-importer-plusieurs-individus">4.3 « Importer plusieurs fichiers (individus) / Import multiple files (individuals) »</h3>
+      <h3 id="copsoq-importer-plusieurs-individus">4.3 « Importer plusieurs fichiers (individus) » (drapeau français / globe international)</h3>
+      <p>Comme pour Karasek-Siegrist : un tracé polaire par personne, des statistiques de groupe (« Résultats COPSOQ multi-individuels »/« COPSOQ multiple individual results »), et la liste des fichiers chargés en bas de page. Boutons « Ajouter des fichiers » et « Réinitialiser les imports » sur la ligne du titre.</p>
       <figure>
         <img src="docs/screenshots/copsoq-multi-individus-result.png" alt="Comparaison multi-individus COPSOQ" />
-        <figcaption>Comparaison de 4 résultats COPSOQ : un tracé polaire par personne et statistiques de groupe.</figcaption>
+        <figcaption>Comparaison de plusieurs résultats COPSOQ : un tracé polaire par personne et statistiques de groupe.</figcaption>
       </figure>
 
-      <h3 id="copsoq-importer-groupe">4.4 « Importer plusieurs fichiers (groupe) / Import multiple files (group) »</h3>
+      <h3 id="copsoq-importer-groupe">4.4 « Importer plusieurs fichiers (groupes) » (drapeau français / globe international)</h3>
+      <p>Comme ci-dessus, mais chaque ajout de fichiers crée un nouveau lot (« Résultats COPSOQ de groupes »/« COPSOQ group results »). Boutons « Ajouter des fichiers (nouveau lot) » et « Réinitialiser les imports » sur la ligne du titre ; liste des fichiers par lot en bas de page.</p>
       <figure>
         <img src="docs/screenshots/copsoq-groupe-result.png" alt="Résultat groupe COPSOQ" />
-        <figcaption>Vue « groupe » COPSOQ : les fichiers fusionnés en une seule population.</figcaption>
+        <figcaption>Vue « groupes » COPSOQ : un tracé par lot et un tableau comparatif.</figcaption>
       </figure>
 
-      <h3 id="copsoq-referentiel">4.5 « Référentiel »</h3>
+      <h3 id="copsoq-referentiel">4.5 « Référentiel / References »</h3>
+      <p>Contrairement aux 4 fonctionnalités précédentes, ce sous-menu est <strong>unique et bilingue</strong> (préfixé à la fois du drapeau français et du globe international) : son contenu (liens vers COPSOQ Network, versions française/internationale, INRS) est le même quelle que soit la langue utilisée par ailleurs.</p>
       <figure>
         <img src="docs/screenshots/copsoq-referentiel.png" alt="Référentiel COPSOQ" />
         <figcaption>Liens de référence COPSOQ (COPSOQ Network, versions FR/EN, licences).</figcaption>
@@ -660,7 +727,7 @@ function renderAideView() {
 
     <section class="aide-section" id="a-propos">
       <h2>6. « A propos »</h2>
-      <p>Rappelle l'objet de l'application, les sources (Karasek-Siegrist, COPSOQ, rapport « Gollac », ANACT), les bibliothèques utilisées (Plotly.js) et les palettes de couleurs accessibles (Okabe-Ito, Paul Tol muted), ainsi que les licences (contenu sous CC BY-NC-ND 4.0, code sous licence MIT).</p>
+      <p>Accessible via l'icône « i » affichée dans l'en-tête, à gauche du bouton hamburger (ce n'est plus une entrée du menu). Rappelle l'objet de l'application, les sources (Karasek-Siegrist, COPSOQ, rapport « Gollac », ANACT), les bibliothèques utilisées (Plotly.js) et les palettes de couleurs accessibles (Okabe-Ito, Paul Tol muted), ainsi que les licences (contenu sous CC BY-NC-ND 4.0, code sous licence MIT).</p>
       <figure>
         <img src="docs/screenshots/a-propos.png" alt="Page A propos" />
         <figcaption>La page « A propos ».</figcaption>
@@ -668,8 +735,8 @@ function renderAideView() {
     </section>
 
     <section class="aide-section" id="github-licence">
-      <h2>7. « GitHub » et « CC BY-NC-ND 4.0 »</h2>
-      <p>Ces deux entrées de menu n'ouvrent pas de page interne : elles ouvrent, dans un nouvel onglet, respectivement le dépôt de code source de l'application sur GitHub et le texte complet de la licence Creative Commons BY-NC-ND 4.0 sous laquelle le contenu est publié.</p>
+      <h2>7. Liens « GitHub » et « CC BY-NC-ND 4.0 »</h2>
+      <p>Ces deux icônes, affichées dans l'en-tête à gauche du bouton hamburger (aux côtés des icônes « A propos » et « Aide », et non dans le menu), ouvrent dans un nouvel onglet respectivement le dépôt de code source de l'application sur GitHub et le texte complet de la licence Creative Commons BY-NC-ND 4.0 sous laquelle le contenu est publié.</p>
     </section>
 
     <section class="aide-section" id="couleurs">
@@ -692,9 +759,9 @@ function renderAideView() {
       <div class="scenario">
         <h4>Scénario A — Répondre au questionnaire et sauvegarder son résultat</h4>
         <ol>
-          <li>Ouvrez le menu, puis <strong>Karasek-Siegrist → Questionnaire</strong> (ou <strong>COPSOQ → Questionnaire</strong>).</li>
+          <li>Ouvrez le menu, puis <strong>Karasek-Siegrist → Questionnaire</strong> (ou <strong>COPSOQ → Questionnaire</strong>, en choisissant le sous-menu préfixé du drapeau français ou du globe international selon la langue souhaitée).</li>
           <li>Répondez à toutes les questions.</li>
-          <li>Cliquez sur le bouton de sauvegarde en bas du questionnaire : un fichier <code>.json</code> est téléchargé sur votre poste (dossier « Téléchargements » par défaut).</li>
+          <li>Cliquez sur le bouton « Sauvegarder dans un fichier » (ligne du titre pour COPSOQ, bas du questionnaire pour Karasek-Siegrist) : un fichier <code>.json</code> est téléchargé sur votre poste (dossier « Téléchargements » par défaut).</li>
           <li>Conservez ce fichier : il pourra être rechargé plus tard dans n'importe laquelle des vues « Importer... » ou « Rapprochement RPS ».</li>
         </ol>
       </div>
@@ -702,26 +769,26 @@ function renderAideView() {
       <div class="scenario">
         <h4>Scénario B — Consulter un résultat individuel déjà sauvegardé</h4>
         <ol>
-          <li>Menu <strong>Karasek-Siegrist → Importer un fichier</strong> (ou <strong>COPSOQ → Importer un fichier</strong>).</li>
+          <li>Menu <strong>Karasek-Siegrist → Importer un fichier</strong> (ou <strong>COPSOQ → Importer un fichier</strong>, sous-menu de la bonne langue).</li>
           <li>Sélectionnez votre fichier <code>.json</code> dans la boîte de dialogue.</li>
-          <li>Les scores, couleurs et graphiques s'affichent immédiatement.</li>
+          <li>Les scores, couleurs et graphiques s'affichent immédiatement. Une revisite ultérieure du même sous-menu réaffichera directement ce résultat (sans rouvrir la boîte de dialogue) tant que vous ne cliquez pas sur « Réinitialiser l'import ».</li>
         </ol>
       </div>
 
       <div class="scenario">
         <h4>Scénario C — Comparer plusieurs collaborateurs</h4>
         <ol>
-          <li>Menu <strong>Karasek-Siegrist → Importer plusieurs fichiers (individus)</strong> (ou l'équivalent COPSOQ).</li>
+          <li>Menu <strong>Karasek-Siegrist → Importer plusieurs fichiers (individus)</strong> (ou l'équivalent COPSOQ, sous-menu de la bonne langue).</li>
           <li>Sélectionnez plusieurs fichiers <code>.json</code> en une seule fois (maintenez <kbd>Ctrl</kbd> ou <kbd>Shift</kbd> enfoncé dans la boîte de dialogue pour une sélection multiple).</li>
           <li>Le tableau de statistiques (moyenne/médiane/min/max) et les graphiques se mettent à jour.</li>
-          <li>Vous pouvez recommencer l'opération : les nouveaux fichiers viennent s'ajouter à ceux déjà chargés.</li>
+          <li>Cliquez sur « Ajouter des fichiers » (ligne du titre) pour en charger d'autres : ils viennent s'ajouter à ceux déjà chargés (retrouvez-les tous en bas de page). « Réinitialiser les imports » repart de zéro.</li>
         </ol>
       </div>
 
       <div class="scenario">
         <h4>Scénario D — Comparer plusieurs groupes/lots</h4>
         <ol>
-          <li>Menu <strong>Karasek-Siegrist → Importer plusieurs fichiers (groupe)</strong> (ou COPSOQ, ou <strong>Rapprochement RPS → Rapprochement RPS de groupes</strong>).</li>
+          <li>Menu <strong>Karasek-Siegrist → Importer plusieurs fichiers (groupe)</strong> (ou COPSOQ, sous-menu de la bonne langue, ou <strong>Rapprochement RPS → Rapprochement RPS de groupes</strong>).</li>
           <li>Chaque clic sur le bouton d'ajout et sélection de fichiers crée un nouveau lot (« Lot 1 », « Lot 2 », etc.).</li>
           <li>Le tableau de comparaison des groupes se met à jour à chaque nouveau lot ; dans la vue « Rapprochement RPS de groupes », le diagramme Sankey superpose automatiquement tous les lots.</li>
           <li>Cliquez sur le bouton « Afficher uniquement le lot N » (coloré comme son repère) pour afficher uniquement son diagramme Sankey détaillé ; cliquez-le à nouveau (il devient « Afficher tous les lots ») pour revenir à la superposition.</li>
@@ -900,6 +967,7 @@ function ensureKarasekImportInputs() {
 
     try {
       const individual = await readKarasekSavedFile(file);
+      karasekImportedSingle = individual;
       renderKarasekSingleResultView(
         individual.ordered,
         "questionnaire et trace associés.",
@@ -1054,6 +1122,17 @@ function triggerCopsoqGroupImport(preferredLang) {
   ensureCopsoqImportInputs();
   copsoqImportGroupInput.click();
 }
+// Force la langue COPSOQ à correspondre à l'élément de menu choisi : ensureCopsoqMounted() est un
+// no-op si le formulaire est déjà monté (langue potentiellement différente), d'où l'appel explicite
+// à selectLanguage() en cas d'écart, pour éviter tout état de langue périmé.
+function ensureCopsoqLanguage(lang) {
+  const resolvedLang = resolveLang(lang);
+  ensureCopsoqMounted(resolvedLang);
+  if (currentLang !== resolvedLang) {
+    selectLanguage(resolvedLang);
+  }
+  return resolvedLang;
+}
 function randomizeRadiosInForm(form) {
   const groups = new Map();
   const radios = form.querySelectorAll('input[type="radio"]');
@@ -1144,7 +1223,7 @@ function buildKarasekQuestionnaireTable(ordered, categoryScores) {
       const categoryCell = document.createElement("td");
       const categoryScore = categoryScores ? categoryScores[rowData.category] || 0 : 0;
       categoryCell.colSpan = 2;
-      categoryCell.textContent = rowData.category;
+      categoryCell.textContent = karasekDimensionDisplayNames[rowData.category] || rowData.category;
       categoryCell.style.backgroundColor = getKarasekCategoryScaleColor(rowData.category, categoryScore);
       categoryCell.style.color = getContrastTextColor(categoryCell.style.backgroundColor);
       categoryCell.style.fontWeight = "700";
@@ -1185,6 +1264,13 @@ function buildKarasekZoneLegend() {
     legend.append(legendItem);
   });
   return legend;
+}
+// Regroupe le plot et sa légende de zones pour qu'ils passent ensemble en plein écran (cf. ensureKarasekFullscreenBehavior).
+function wrapKarasekPlotWithLegend(plotArea) {
+  const wrap = document.createElement("div");
+  wrap.className = "karasek-plot-fullscreen-wrap";
+  wrap.append(plotArea, buildKarasekZoneLegend());
+  return wrap;
 }
 function getKarasekExportLegendItems(lineItems = []) {
   return [
@@ -1282,15 +1368,26 @@ function renderKarasekSingleResultView(ordered, subtitleText, showSaveButton = f
   plotArea.id = "karasek-3d-plot";
   plotArea.className = "plot-area";
   applyKarasekPlotContainerSize(plotArea);
-  plotPanel.append(plotArea, buildKarasekZoneLegend());
+  plotPanel.append(wrapKarasekPlotWithLegend(plotArea));
   resultsLayout.append(tableWrap, plotPanel);
-  contentRoot.append(resultsTitle, resultsSubtitle);
+  const titleRow = document.createElement("div");
+  titleRow.className = "content-title-row";
+  titleRow.append(resultsTitle);
+  if (importedFileName) {
+    const resetSingleBtn = document.createElement("button");
+    resetSingleBtn.type = "button";
+    resetSingleBtn.className = "secondary-btn compact-action-btn";
+    resetSingleBtn.textContent = "Réinitialiser l'import";
+    resetSingleBtn.addEventListener("click", () => {
+      karasekImportedSingle = null;
+      triggerKarasekSingleImport();
+    });
+    titleRow.append(resetSingleBtn);
+  }
   if (showSaveButton) {
-    const resultActions = document.createElement("div");
-    resultActions.className = "questionnaire-actions result-actions";
     const saveBtn = document.createElement("button");
     saveBtn.type = "button";
-    saveBtn.className = "secondary-btn";
+    saveBtn.className = "secondary-btn compact-action-btn";
     saveBtn.textContent = "Sauvegarder dans un fichier";
     saveBtn.addEventListener("click", () => {
       downloadJsonFile(
@@ -1298,10 +1395,9 @@ function renderKarasekSingleResultView(ordered, subtitleText, showSaveButton = f
         "questionnaire-karasek-siegrist-",
       );
     });
-    resultActions.append(saveBtn);
-    contentRoot.append(resultActions);
+    titleRow.append(saveBtn);
   }
-  contentRoot.append(resultsLayout);
+  contentRoot.append(titleRow, resultsSubtitle, resultsLayout);
   renderKarasek3dPlot("karasek-3d-plot", categoryScores);
   scrollToPageTop();
 }
@@ -1359,32 +1455,40 @@ function renderKarasekIndividualsView(individuals) {
   const subtitle = document.createElement("p");
   subtitle.className = "content-subtitle";
   subtitle.textContent =
-    "Un tracé par individu avec statistiques de groupe et répartition des zones.";
+    "Comparaison d'individus avec statistiques et répartition des individus.";
+  const resetIndividualsBtn = document.createElement("button");
+  resetIndividualsBtn.type = "button";
+  resetIndividualsBtn.className = "secondary-btn compact-action-btn";
+  resetIndividualsBtn.textContent = "Réinitialiser les imports";
+  resetIndividualsBtn.addEventListener("click", () => {
+    karasekImportedIndividuals = [];
+    triggerKarasekIndividualsImport();
+  });
+  const addIndividualsBtn = document.createElement("button");
+  addIndividualsBtn.type = "button";
+  addIndividualsBtn.className = "secondary-btn compact-action-btn";
+  addIndividualsBtn.textContent = "Ajouter des fichiers";
+  addIndividualsBtn.addEventListener("click", () => {
+    triggerKarasekIndividualsImport();
+  });
+  const titleRow = document.createElement("div");
+  titleRow.className = "content-title-row";
+  titleRow.append(title, addIndividualsBtn, resetIndividualsBtn);
   const layout = document.createElement("div");
   layout.className = "results-layout";
   layout.style.gridTemplateColumns = "minmax(320px, 0.9fr) minmax(0, 1.1fr)";
   const leftPanel = document.createElement("div");
   leftPanel.className = "results-table-wrap";
-  const resetIndividualsBtn = document.createElement("button");
-  resetIndividualsBtn.type = "button";
-  resetIndividualsBtn.className = "secondary-btn";
-  resetIndividualsBtn.textContent = "Réinitialiser les imports";
-  resetIndividualsBtn.style.marginTop = "0";
-  resetIndividualsBtn.style.marginBottom = "10px";
-  resetIndividualsBtn.style.padding = "7px 12px";
-  resetIndividualsBtn.style.fontSize = "0.86rem";
-  resetIndividualsBtn.addEventListener("click", () => {
-    karasekImportedIndividuals = [];
-    triggerKarasekIndividualsImport();
-  });
   const statsTable = document.createElement("table");
   statsTable.className = "results-table";
-  statsTable.innerHTML = "<thead><tr><th>Dimension</th><th>Moyenne</th><th>Médiane</th><th>Min</th><th>Max</th></tr></thead><tbody></tbody>";
+  statsTable.style.width = "auto";
+  statsTable.innerHTML = "<thead><tr><th>Dimension</th><th class=\"text-center\">Moyenne</th><th class=\"text-center\">Médiane</th><th class=\"text-center\">Min</th><th class=\"text-center\">Max</th></tr></thead><tbody></tbody>";
   const tbody = statsTable.querySelector("tbody");
   karasekCategoryOrder.forEach((category) => {
     const values = individuals.map((individual) => individual.scores[category] || 0);
     const row = document.createElement("tr");
-    row.innerHTML = `<td>${category}</td><td>${formatStat(values, "mean")}</td><td>${formatStat(values, "median")}</td><td>${formatStat(values, "min")}</td><td>${formatStat(values, "max")}</td>`;
+    const dimensionLabel = karasekDimensionDisplayNames[category] || category;
+    row.innerHTML = `<td>${dimensionLabel}</td><td>${formatStat(values, "mean")}</td><td>${formatStat(values, "median")}</td><td>${formatStat(values, "min")}</td><td>${formatStat(values, "max")}</td>`;
     const cells = row.querySelectorAll("td");
     cells[0].style.fontWeight = "600";
     for (let index = 1; index < cells.length; index += 1) {
@@ -1403,7 +1507,8 @@ function renderKarasekIndividualsView(individuals) {
   const zonesTable = document.createElement("table");
   zonesTable.className = "results-table";
   zonesTable.style.marginTop = "12px";
-  zonesTable.innerHTML = "<thead><tr><th>Zone</th><th>Soutien</th><th>Reconnaissance</th></tr></thead><tbody></tbody>";
+  zonesTable.style.width = "auto";
+  zonesTable.innerHTML = "<thead><tr><th>Zone</th><th class=\"text-center\">Soutien</th><th class=\"text-center\">Reconnaissance</th></tr></thead><tbody></tbody>";
   const zoneBody = zonesTable.querySelector("tbody");
   const zoneNames = Object.keys(karasekZoneColors);
   zoneNames.forEach((zoneName) => {
@@ -1425,6 +1530,11 @@ function renderKarasekIndividualsView(individuals) {
   const countText = document.createElement("p");
   countText.className = "content-subtitle";
   countText.textContent = `Nombre d'individus: ${individuals.length}`;
+  const filesSection = document.createElement("div");
+  filesSection.className = "karasek-individual-files-section";
+  const fileLegendHeading = document.createElement("p");
+  fileLegendHeading.className = "content-subtitle";
+  fileLegendHeading.textContent = "Fichiers chargés :";
   const fileLegend = document.createElement("ul");
   fileLegend.className = "karasek-individual-file-legend";
   fileLegend.setAttribute("aria-label", "Fichiers importés et couleurs des lignes");
@@ -1435,6 +1545,7 @@ function renderKarasekIndividualsView(individuals) {
     item.append(buildKarasekIndividualLineSwatch(index), fileName);
     fileLegend.append(item);
   });
+  filesSection.append(fileLegendHeading, fileLegend);
 
   const selectedSummaryWrap = document.createElement("div");
   selectedSummaryWrap.style.marginTop = "12px";
@@ -1444,7 +1555,6 @@ function renderKarasekIndividualsView(individuals) {
   selectedSummaryTitle.className = "content-subtitle";
 
   const selectedSummaryContent = document.createElement("div");
-  selectedSummaryContent.style.maxHeight = "320px";
   selectedSummaryContent.style.overflowY = "auto";
   selectedSummaryContent.style.padding = "8px";
   selectedSummaryContent.style.border = "1px solid #d9d9d9";
@@ -1452,16 +1562,16 @@ function renderKarasekIndividualsView(individuals) {
   selectedSummaryContent.style.background = "#ffffff";
 
   selectedSummaryWrap.append(selectedSummaryTitle, selectedSummaryContent);
-  leftPanel.append(resetIndividualsBtn, countText, fileLegend, statsTable, zonesTable, selectedSummaryWrap);
+  leftPanel.append(countText, statsTable, zonesTable, selectedSummaryWrap);
   const rightPanel = document.createElement("section");
   rightPanel.className = "plot-panel";
   const plotArea = document.createElement("div");
   plotArea.id = "karasek-multi-individuals-plot";
   plotArea.className = "plot-area";
   applyKarasekPlotContainerSize(plotArea);
-  rightPanel.append(plotArea, buildKarasekZoneLegend());
+  rightPanel.append(wrapKarasekPlotWithLegend(plotArea));
   layout.append(leftPanel, rightPanel);
-  contentRoot.append(title, subtitle, layout);
+  contentRoot.append(titleRow, subtitle, layout, filesSection);
   const soutienTrace = {
     type: "scatter3d",
     mode: "markers",
@@ -1477,7 +1587,7 @@ function renderKarasekIndividualsView(individuals) {
       symbol: "circle",
       line: { color: "#ffffff", width: 1 },
     },
-    hovertemplate: "%{text}<br>Exigences: %{x}<br>Autonomie: %{y}<br>Soutien: %{z}<extra></extra>",
+    hovertemplate: "%{text}<br>Exigences: %{x}<br>Autonomie: %{y}<br>Soutien: %{z}<br>Cliquer sur le point pour afficher le questionnaire associé.<extra></extra>",
   };
   const reconnaissanceTrace = {
     type: "scatter3d",
@@ -1494,7 +1604,7 @@ function renderKarasekIndividualsView(individuals) {
       symbol: "diamond",
       line: { color: "#ffffff", width: 1 },
     },
-    hovertemplate: "%{text}<br>Exigences: %{x}<br>Autonomie: %{y}<br>Reconnaissance: %{z}<extra></extra>",
+    hovertemplate: "%{text}<br>Exigences: %{x}<br>Autonomie: %{y}<br>Reconnaissance: %{z}<br>Cliquer sur le point pour afficher le questionnaire associé.<extra></extra>",
   };
   const linkTraces = [];
   individuals.forEach((individual, index) => {
@@ -1583,6 +1693,16 @@ function renderKarasekIndividualsView(individuals) {
     selectedSummaryContent.innerHTML = "";
     selectedSummaryContent.append(buildKarasekQuestionnaireTable(individual.ordered, individual.scores));
     selectedSummaryWrap.style.display = "block";
+    // Statistiques + espace questionnaire doivent occuper une hauteur totale équivalente à celle du
+    // plot : on lit la hauteur du graphique lui-même (plotArea, non affecté par l'étirement de la
+    // grille CSS) plutôt que celle de rightPanel, qui elle peut être artificiellement étirée par la
+    // grille dès que ce bloc de questionnaire (encore sans hauteur imposée) rend leftPanel plus haut.
+    const plotHeight = plotArea.getBoundingClientRect().height;
+    const spaceBefore = selectedSummaryWrap.getBoundingClientRect().top - leftPanel.getBoundingClientRect().top;
+    const titleHeight = selectedSummaryTitle.getBoundingClientRect().height;
+    const contentHeight = Math.max(200, Math.round(plotHeight - spaceBefore - titleHeight - 12));
+    selectedSummaryContent.style.height = `${contentHeight}px`;
+    selectedSummaryContent.style.maxHeight = `${contentHeight}px`;
   });
   scrollToPageTop();
 }
@@ -1600,26 +1720,33 @@ function renderKarasekGroupView(individuals) {
   title.textContent = "Résultats Karasek-Siegrist de groupes";
   const subtitle = document.createElement("p");
   subtitle.className = "content-subtitle";
-  subtitle.textContent = "Tous les individus dans une même trace avec statistiques de groupe et répartition des zones.";
-  const layout = document.createElement("div");
-  layout.className = "results-layout";
-  layout.style.gridTemplateColumns = "minmax(320px, 0.9fr) minmax(0, 1.1fr)";
-  const leftPanel = document.createElement("div");
-  leftPanel.className = "results-table-wrap";
+  subtitle.textContent = "Comparaison de groupes d'individus avec statistiques et répartition de chaque groupe.";
   const resetGroupBtn = document.createElement("button");
   resetGroupBtn.type = "button";
-  resetGroupBtn.className = "secondary-btn";
+  resetGroupBtn.className = "secondary-btn compact-action-btn";
   resetGroupBtn.textContent = "Réinitialiser les imports";
-  resetGroupBtn.style.marginTop = "0";
-  resetGroupBtn.style.marginBottom = "10px";
-  resetGroupBtn.style.padding = "7px 12px";
-  resetGroupBtn.style.fontSize = "0.86rem";
   resetGroupBtn.addEventListener("click", () => {
     karasekImportedGroupBatches = [];
     triggerKarasekGroupImport();
   });
-  leftPanel.append(resetGroupBtn);
+  const addGroupBtn = document.createElement("button");
+  addGroupBtn.type = "button";
+  addGroupBtn.className = "secondary-btn compact-action-btn";
+  addGroupBtn.textContent = "Ajouter des fichiers (nouveau lot)";
+  addGroupBtn.addEventListener("click", () => {
+    triggerKarasekGroupImport();
+  });
+  const titleRow = document.createElement("div");
+  titleRow.className = "content-title-row";
+  titleRow.append(title, addGroupBtn, resetGroupBtn);
+  const layout = document.createElement("div");
+  layout.className = "results-layout";
+  layout.style.gridTemplateColumns = "minmax(320px, max-content) minmax(280px, 1fr)";
+  const leftPanel = document.createElement("div");
+  leftPanel.className = "results-table-wrap";
 
+  const filesSection = document.createElement("div");
+  filesSection.className = "karasek-individual-files-section";
   const batchList = document.createElement("div");
   batchList.className = "karasek-group-set-list";
   groupBatches.forEach((batch, batchIndex) => {
@@ -1644,11 +1771,12 @@ function renderKarasekGroupView(individuals) {
     batchItem.append(batchHeading, fileList);
     batchList.append(batchItem);
   });
-  leftPanel.append(batchList);
+  filesSection.append(batchList);
 
   const statsTable = document.createElement("table");
   statsTable.className = "results-table karasek-group-statistics-table";
-  statsTable.innerHTML = "<thead><tr><th>Dimension</th><th>Lot</th><th>Moyenne</th><th>Médiane</th><th>Min</th><th>Max</th></tr></thead><tbody></tbody>";
+  statsTable.style.width = "auto";
+  statsTable.innerHTML = "<thead><tr><th>Dimension</th><th class=\"text-center\">Lot</th><th class=\"text-center\">Moyenne</th><th class=\"text-center\">Médiane</th><th class=\"text-center\">Min</th><th class=\"text-center\">Max</th></tr></thead><tbody></tbody>";
   const statsBody = statsTable.querySelector("tbody");
   karasekCategoryOrder.forEach((category) => {
     groupBatches.forEach((batch, batchIndex) => {
@@ -1659,7 +1787,7 @@ function renderKarasekGroupView(individuals) {
         const categoryCell = document.createElement("td");
         categoryCell.rowSpan = groupBatches.length;
         categoryCell.className = "karasek-group-label-cell";
-        categoryCell.textContent = category;
+        categoryCell.textContent = karasekDimensionDisplayNames[category] || category;
         row.append(categoryCell);
       }
       const batchCell = document.createElement("td");
@@ -1689,7 +1817,8 @@ function renderKarasekGroupView(individuals) {
   const zonesTable = document.createElement("table");
   zonesTable.className = "results-table karasek-group-statistics-table";
   zonesTable.style.marginTop = "12px";
-  zonesTable.innerHTML = "<thead><tr><th>Zone</th><th>Lot</th><th>Soutien</th><th>Reconnaissance</th></tr></thead><tbody></tbody>";
+  zonesTable.style.width = "auto";
+  zonesTable.innerHTML = "<thead><tr><th>Zone</th><th class=\"text-center\">Lot</th><th class=\"text-center\">Soutien</th><th class=\"text-center\">Reconnaissance</th></tr></thead><tbody></tbody>";
   const zoneBody = zonesTable.querySelector("tbody");
   Object.keys(karasekZoneColors).forEach((zoneName) => {
     groupBatches.forEach((batch, batchIndex) => {
@@ -1729,9 +1858,9 @@ function renderKarasekGroupView(individuals) {
   plotArea.id = "karasek-group-plot";
   plotArea.className = "plot-area";
   applyKarasekPlotContainerSize(plotArea);
-  rightPanel.append(plotArea, buildKarasekZoneLegend());
+  rightPanel.append(wrapKarasekPlotWithLegend(plotArea));
   layout.append(leftPanel, rightPanel);
-  contentRoot.append(title, subtitle, layout);
+  contentRoot.append(titleRow, subtitle, layout, filesSection);
   const traces = [];
 
   groupBatches.forEach((batch, batchIndex) => {
@@ -1958,7 +2087,7 @@ function getKarasekPlotConfig(container, filenamePrefix, exportOptions = {}) {
     sendDataToCloud: false,
     displaylogo: false,
     displayModeBar: true,
-    modeBarButtonsToRemove: ["resetCameraLastSave3d", "toImage"],
+    modeBarButtonsToRemove: ["resetCameraLastSave3d", "zoom3d", "toImage"],
     toImageButtonOptions: {
       format: "png",
       filename: `${filenamePrefix}-${Date.now()}`,
@@ -1968,6 +2097,7 @@ function getKarasekPlotConfig(container, filenamePrefix, exportOptions = {}) {
       getPlotImageExportButton(container, {
         title: exportOptions.title || "Karasek-Siegrist",
         legendItems: getKarasekExportLegendItems(exportOptions.lineItems),
+        legendPosition: "overlay-top-left",
         filename: `${filenamePrefix}-${Date.now()}`,
         width: 1600,
         height: 1600,
@@ -1984,14 +2114,14 @@ function getKarasekPlotConfig(container, filenamePrefix, exportOptions = {}) {
           if (!container) {
             return;
           }
+          const fullscreenTarget = container.closest(".karasek-plot-fullscreen-wrap") || container;
           if (!document.fullscreenElement) {
-            container.dataset.karasekPrevBackground = container.style.backgroundColor || "";
-            container.style.backgroundColor = "#ffffff";
-            container.requestFullscreen();
+            fullscreenTarget.dataset.karasekPrevBackground = fullscreenTarget.style.backgroundColor || "";
+            fullscreenTarget.style.backgroundColor = "#ffffff";
+            fullscreenTarget.requestFullscreen();
           } else {
             document.exitFullscreen();
           }
-          setTimeout(() => Plotly.Plots.resize(container), 150);
         },
       },
     ],
@@ -2003,26 +2133,39 @@ function ensureKarasekFullscreenBehavior(container) {
   }
   container.dataset.karasekFullscreenBound = "true";
   document.addEventListener("fullscreenchange", () => {
-    if (document.fullscreenElement === container) {
-      container.style.backgroundColor = "#ffffff";
-      if (typeof Plotly !== "undefined" && typeof Plotly.relayout === "function") {
-        Plotly.relayout(container, {
-          paper_bgcolor: "#ffffff",
-          plot_bgcolor: "#ffffff",
-        });
-      }
+    const fullscreenTarget = container.closest(".karasek-plot-fullscreen-wrap") || container;
+    const isEntering = document.fullscreenElement === fullscreenTarget;
+    if (isEntering) {
+      fullscreenTarget.style.backgroundColor = "#ffffff";
     } else {
-      container.style.backgroundColor = container.dataset.karasekPrevBackground || "";
-      if (typeof Plotly !== "undefined" && typeof Plotly.relayout === "function") {
-        Plotly.relayout(container, {
-          paper_bgcolor: "rgba(255,255,255,1)",
-          plot_bgcolor: "rgba(255,255,255,1)",
-        });
+      fullscreenTarget.style.backgroundColor = fullscreenTarget.dataset.karasekPrevBackground || "";
+    }
+    // setTimeout (pas requestAnimationFrame, mis en pause si l'onglet n'est pas au premier plan) :
+    // on mesure la taille RÉELLE du conteneur une fois le changement plein écran appliqué (que ce
+    // soit à l'entrée ou à la sortie, la taille CSS du conteneur est alors déjà correcte dans les
+    // deux cas) et on l'impose explicitement via relayout — un simple Plotly.Plots.resize() ne
+    // suffit pas à dépasser le layout.height figé fixé à la création du graphique (même bug déjà
+    // rencontré et corrigé sur le sunburst COPSOQ).
+    setTimeout(() => {
+      if (!container.isConnected || typeof Plotly === "undefined" || typeof Plotly.relayout !== "function") {
+        return;
       }
-    }
-    if (typeof Plotly !== "undefined" && Plotly.Plots && typeof Plotly.Plots.resize === "function") {
-      setTimeout(() => Plotly.Plots.resize(container), 100);
-    }
+      const rect = container.getBoundingClientRect();
+      const width = Math.round(rect.width);
+      const height = Math.round(rect.height);
+      const layoutUpdate = isEntering
+        ? { paper_bgcolor: "#ffffff", plot_bgcolor: "#ffffff" }
+        : { paper_bgcolor: "rgba(255,255,255,1)", plot_bgcolor: "rgba(255,255,255,1)" };
+      if (width > 0 && height > 0) {
+        layoutUpdate.width = width;
+        layoutUpdate.height = height;
+      }
+      Plotly.relayout(container, layoutUpdate).then(() => {
+        if (Plotly.Plots && typeof Plotly.Plots.resize === "function") {
+          Plotly.Plots.resize(container);
+        }
+      });
+    }, 60);
   });
 }
 function renderKarasekQuestionnaire() {
@@ -2135,7 +2278,7 @@ function renderKarasekQuestionnaire() {
 
     renderKarasekSingleResultView(
       ordered,
-      "Lecture ordonnée par catégorie et visualisation 3D des scores par zones.",
+      "Récapitulatif et positionnement par dimension comme global.",
       true,
     );
   });
@@ -2163,33 +2306,52 @@ function openContent(contentId, activeLink) {
     return;
   }
 
-  if (contentId === "copsoq-questionnaire") {
+  if (contentId === "copsoq-questionnaire-fr" || contentId === "copsoq-questionnaire-en") {
+    const lang = contentId.endsWith("-en") ? "en" : "fr";
     if (typeof mountCopsoq === "function") {
-      mountCopsoq(contentRoot, "fr");
+      mountCopsoq(contentRoot, lang);
     }
     setActiveMenuLink(activeLink);
     scrollToPageTop();
     return;
   }
 
-  if (contentId === "copsoq-importer-un-fichier-import-a-file") {
-    triggerCopsoqSingleImport();
+  if (contentId === "copsoq-import-single-fr" || contentId === "copsoq-import-single-en") {
+    const lang = ensureCopsoqLanguage(contentId.endsWith("-en") ? "en" : "fr");
+    const cached = copsoqImportedSingleByLang[lang];
+    if (cached) {
+      applyCopsoqSingleResult(cached);
+    } else {
+      triggerCopsoqSingleImport(lang);
+      contentRoot.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     setActiveMenuLink(activeLink);
-    contentRoot.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
 
-  if (contentId === "copsoq-importer-plusieurs-fichiers-individus-import-multiple-files-individuals") {
-    triggerCopsoqIndividualsImport();
+  if (contentId === "copsoq-import-individuals-fr" || contentId === "copsoq-import-individuals-en") {
+    const lang = ensureCopsoqLanguage(contentId.endsWith("-en") ? "en" : "fr");
+    const cached = copsoqImportedIndividualsByLang[lang];
+    if (cached.length) {
+      renderCopsoqIndividualsView(cached);
+    } else {
+      triggerCopsoqIndividualsImport(lang);
+      contentRoot.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     setActiveMenuLink(activeLink);
-    contentRoot.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
 
-  if (contentId === "copsoq-importer-plusieurs-fichiers-groupe-import-multiple-files-group") {
-    triggerCopsoqGroupImport();
+  if (contentId === "copsoq-import-group-fr" || contentId === "copsoq-import-group-en") {
+    const lang = ensureCopsoqLanguage(contentId.endsWith("-en") ? "en" : "fr");
+    const cached = copsoqImportedGroupBatchesByLang[lang];
+    if (cached.length) {
+      renderCopsoqGroupView(cached);
+    } else {
+      triggerCopsoqGroupImport(lang);
+      contentRoot.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     setActiveMenuLink(activeLink);
-    contentRoot.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
 
@@ -2201,23 +2363,40 @@ function openContent(contentId, activeLink) {
   }
 
   if (contentId === "karasek-siegrist-importer-un-fichier") {
-    triggerKarasekSingleImport();
+    if (karasekImportedSingle) {
+      renderKarasekSingleResultView(
+        karasekImportedSingle.ordered,
+        "questionnaire et trace associés.",
+        false,
+        karasekImportedSingle.fileName,
+      );
+    } else {
+      triggerKarasekSingleImport();
+      contentRoot.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     setActiveMenuLink(activeLink);
-    contentRoot.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
 
   if (contentId === "karasek-siegrist-importer-plusieurs-fichiers-individus") {
-    triggerKarasekIndividualsImport();
+    if (karasekImportedIndividuals.length) {
+      renderKarasekIndividualsView(karasekImportedIndividuals);
+    } else {
+      triggerKarasekIndividualsImport();
+      contentRoot.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     setActiveMenuLink(activeLink);
-    contentRoot.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
 
   if (contentId === "karasek-siegrist-importer-plusieurs-fichiers-groupe") {
-    triggerKarasekGroupImport();
+    if (karasekImportedGroupBatches.length) {
+      renderKarasekGroupView(karasekImportedGroupBatches);
+    } else {
+      triggerKarasekGroupImport();
+      contentRoot.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     setActiveMenuLink(activeLink);
-    contentRoot.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
 
@@ -2288,16 +2467,73 @@ function openContent(contentId, activeLink) {
   scrollToPageTop();
 }
 
-function createSubmenuItem(parentLabel, itemLabel) {
+// Icône de langue (drapeau France en SVG / globe international) affichée en préfixe des éléments
+// de sous-menu par langue (ex. COPSOQ), pour identifier visuellement la langue sans dupliquer le texte.
+function buildSubmenuLanguageIcon(lang) {
+  if (lang === "fr") {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 3 2");
+    svg.setAttribute("width", "18");
+    svg.setAttribute("height", "12");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    svg.classList.add("submenu-lang-icon");
+    [["0", "#0055a4"], ["1", "#ffffff"], ["2", "#ef4135"]].forEach(([x, fill]) => {
+      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rect.setAttribute("width", "1");
+      rect.setAttribute("height", "2");
+      rect.setAttribute("x", x);
+      rect.setAttribute("fill", fill);
+      svg.append(rect);
+    });
+    return svg;
+  }
+  const span = document.createElement("span");
+  span.className = "submenu-lang-icon submenu-lang-icon-intl";
+  span.setAttribute("aria-hidden", "true");
+  span.textContent = "🌐";
+  return span;
+}
+function createSubmenuItem(parentLabel, item) {
   const li = document.createElement("li");
   const link = document.createElement("a");
-  const contentId = `${slugify(parentLabel)}-${slugify(itemLabel)}`;
+  const isObjectItem = typeof item === "object" && item !== null;
+  const hasParts = isObjectItem && Array.isArray(item.parts);
+  const itemLabel = isObjectItem ? (hasParts ? item.parts.map((part) => part.text).join(" / ") : item.label) : item;
+  const itemSlug = isObjectItem && item.id ? slugify(item.id) : slugify(itemLabel);
+  const contentId = `${slugify(parentLabel)}-${itemSlug}`;
 
   link.className = "submenu-link";
   link.href = `#${contentId}`;
-  link.textContent = itemLabel;
-  link.setAttribute("aria-label", `${parentLabel} - ${itemLabel}`);
   link.dataset.contentId = contentId;
+  if (isObjectItem && item.lang && !hasParts) {
+    const langName = item.lang === "fr" ? "Français" : "International";
+    link.setAttribute("aria-label", `${parentLabel} - ${langName} - ${itemLabel}`);
+  } else {
+    link.setAttribute("aria-label", `${parentLabel} - ${itemLabel}`);
+  }
+
+  if (hasParts) {
+    // Élément bilingue unique (ex. Référentiel COPSOQ) : drapeau + texte FR, puis globe + texte EN.
+    item.parts.forEach((part, index) => {
+      if (index > 0) {
+        const separator = document.createElement("span");
+        separator.textContent = "/";
+        link.append(separator);
+      }
+      link.append(buildSubmenuLanguageIcon(part.lang));
+      const partSpan = document.createElement("span");
+      partSpan.textContent = part.text;
+      link.append(partSpan);
+    });
+  } else {
+    if (isObjectItem && item.lang) {
+      link.append(buildSubmenuLanguageIcon(item.lang));
+    }
+    const textSpan = document.createElement("span");
+    textSpan.textContent = itemLabel;
+    link.append(textSpan);
+  }
 
   link.addEventListener("click", (event) => {
     event.preventDefault();
@@ -2319,51 +2555,7 @@ function createMenuItem(entry) {
 
     link.className = "menu-link";
     link.href = `#${contentId}`;
-    if (contentId === "github") {
-      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      icon.setAttribute("viewBox", "0 0 16 16");
-      icon.setAttribute("width", "14");
-      icon.setAttribute("height", "14");
-      icon.setAttribute("aria-hidden", "true");
-      icon.style.marginRight = "8px";
-      icon.style.verticalAlign = "text-bottom";
-
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      path.setAttribute(
-        "d",
-        "M8 0C3.58 0 0 3.58 0 8a8.001 8.001 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.49c-2.23.49-2.69-1.08-2.69-1.08-.36-.92-.88-1.16-.88-1.16-.72-.49.06-.48.06-.48.8.06 1.22.82 1.22.82.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.58.82-2.14-.08-.2-.36-1.01.08-2.1 0 0 .67-.21 2.2.82a7.64 7.64 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.09.16 1.9.08 2.1.51.56.82 1.27.82 2.14 0 3.07-1.87 3.75-3.65 3.95.29.25.54.74.54 1.49v2.2c0 .21.14.46.55.38A8.001 8.001 0 0 0 16 8c0-4.42-3.58-8-8-8Z",
-      );
-      path.setAttribute("fill", "currentColor");
-      icon.append(path);
-
-      const text = document.createElement("span");
-      text.textContent = entry.label;
-      link.append(icon, text);
-    } else if (contentId === "cc-by-nc-nd-4-0") {
-      const iconsWrap = document.createElement("span");
-      iconsWrap.style.display = "inline-flex";
-      iconsWrap.style.alignItems = "center";
-      iconsWrap.style.gap = "4px";
-      iconsWrap.style.marginRight = "8px";
-
-      const ccIcons = ["cc", "by", "nc", "nd"];
-      ccIcons.forEach((iconName) => {
-        const icon = document.createElement("img");
-        icon.src = `https://mirrors.creativecommons.org/presskit/icons/${iconName}.svg`;
-        icon.width = 16;
-        icon.height = 16;
-        icon.alt = "";
-        icon.setAttribute("aria-hidden", "true");
-        icon.style.verticalAlign = "text-bottom";
-        iconsWrap.append(icon);
-      });
-
-      const text = document.createElement("span");
-      text.textContent = entry.label;
-      link.append(iconsWrap, text);
-    } else {
-      link.textContent = entry.label;
-    }
+    link.textContent = entry.label;
     link.setAttribute("aria-label", entry.label);
     link.dataset.contentId = contentId;
 
@@ -3313,6 +3505,93 @@ function buildRpsGollacComparisonTable(karasekScores, copsoqScores) {
   return wrap;
 }
 
+// Actions prioritaires COPSOQ : une ligne par échelle (triée par score moyen croissant, donc les
+// situations les plus à risque en premier), avec ses items triés par quartile de réponse moyen
+// croissant. loadedFiles accepte un ou plusieurs résultats COPSOQ ({answers:[...]} ou tableau brut
+// de réponses), ce qui permet de réutiliser cette même fonction pour un individu ou un groupe.
+function buildCopsoqActionsPrioritairesTable(loadedFiles, lang) {
+  const t = i18n[resolveLang(lang)] || i18n.fr;
+  const wrap = document.createElement("div");
+  wrap.className = "results-table-wrap";
+  const files = (loadedFiles || []).filter(
+    (file) => file && (Array.isArray(file.answers) ? file.answers.length : Array.isArray(file) && file.length),
+  );
+  if (!files.length) {
+    const placeholder = document.createElement("p");
+    placeholder.textContent = t.noCopsoqResultsForActions;
+    wrap.append(placeholder);
+    return wrap;
+  }
+  const { scaleValuesByDomain, questionValuesByDomain } = buildCopsoqAggregateStatistics(files);
+  const rows = [];
+  Object.keys(scaleValuesByDomain).forEach((domaine) => {
+    Object.keys(scaleValuesByDomain[domaine]).forEach((echelle) => {
+      const scaleValues = scaleValuesByDomain[domaine][echelle];
+      const score = Math.round(scaleValues.reduce((sum, value) => sum + value, 0) / scaleValues.length);
+      const items = Object.keys(questionValuesByDomain[domaine][echelle]).map((question) => {
+        const values = questionValuesByDomain[domaine][echelle][question];
+        return { question, score: Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) };
+      });
+      rows.push({ domaine, echelle, score, items });
+    });
+  });
+  rows.sort((a, b) => a.score - b.score);
+
+  const table = document.createElement("table");
+  table.className = "results-table";
+  table.style.tableLayout = "fixed";
+  const colgroup = document.createElement("colgroup");
+  colgroup.innerHTML = '<col style="width: 14%;"><col style="width: 14%;"><col>';
+  const thead = document.createElement("thead");
+  thead.innerHTML = `<tr><th>${t.thDomain}</th><th>${t.thScale}</th><th>${t.thPriorityItems}</th></tr>`;
+  const tbody = document.createElement("tbody");
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    const domaineCell = document.createElement("td");
+    domaineCell.style.verticalAlign = "top";
+    domaineCell.textContent = row.domaine;
+    const echelleCell = document.createElement("td");
+    echelleCell.style.verticalAlign = "top";
+    const echelleBullet = document.createElement("span");
+    echelleBullet.className = "rps-score-pastille";
+    echelleBullet.style.backgroundColor = getScoreColor(row.score);
+    const echelleLabel = document.createElement("span");
+    echelleLabel.textContent = ` ${row.echelle}`;
+    echelleCell.append(echelleBullet, echelleLabel);
+    const itemsCell = document.createElement("td");
+    const itemsList = document.createElement("ul");
+    itemsList.className = "rps-gollac-report-items";
+    [...row.items]
+      .sort((a, b) => a.score - b.score)
+      .forEach((item) => {
+        const li = document.createElement("li");
+        const bullet = document.createElement("span");
+        bullet.className = "rps-score-pastille";
+        bullet.style.backgroundColor = getScoreColor(item.score);
+        const label = document.createElement("span");
+        label.textContent = item.question;
+        li.append(bullet, label);
+        itemsList.append(li);
+      });
+    itemsCell.append(itemsList);
+    tr.append(domaineCell, echelleCell, itemsCell);
+    tbody.append(tr);
+  });
+  table.append(colgroup, thead, tbody);
+  wrap.append(table);
+  return wrap;
+}
+// Bloc titre + tableau, prêt à insérer dans n'importe quelle vue de résultats COPSOQ.
+function buildCopsoqActionsPrioritairesSection(loadedFiles, lang) {
+  const t = i18n[resolveLang(lang)] || i18n.fr;
+  const section = document.createElement("div");
+  section.className = "copsoq-actions-prioritaires";
+  const heading = document.createElement("h3");
+  heading.textContent = t.actionsPrioritairesTitle;
+  section.append(heading, buildCopsoqActionsPrioritairesTable(loadedFiles, lang));
+  return section;
+}
+
 function renderRpsGollacIndividualView() {
   if (!contentRoot) {
     return;
@@ -3322,11 +3601,7 @@ function renderRpsGollacIndividualView() {
 
   const title = document.createElement("h2");
   title.className = "content-title";
-  title.textContent = "Rapprochement RPS";
-
-  const subtitle = document.createElement("p");
-  subtitle.className = "content-subtitle";
-  subtitle.textContent = "Rapprochement RPS individuel";
+  title.textContent = "Rapprochement RPS individuel";
 
   const intro = document.createElement("article");
   intro.className = "content-card";
@@ -3368,6 +3643,11 @@ function renderRpsGollacIndividualView() {
 
   actions.append(karasekBtn, karasekStatus, copsoqBtn, copsoqStatus);
 
+  const reportHeading = document.createElement("h3");
+  reportHeading.textContent = "Actions prioritaires";
+
+  const reportHost = document.createElement("div");
+
   const resultsHeading = document.createElement("h3");
   resultsHeading.textContent = "Comparaison des scores";
 
@@ -3386,6 +3666,8 @@ function renderRpsGollacIndividualView() {
   function refreshComparison() {
     const karasekScores = karasekResult ? computeKarasekAxisScores(karasekResult.ordered) : null;
     const copsoqScores = copsoqResult ? computeCopsoqAxisScores(copsoqResult.answers) : null;
+    reportHost.innerHTML = "";
+    reportHost.append(buildCopsoqActionsPrioritairesTable(copsoqResult ? [copsoqResult] : []));
     comparisonHost.innerHTML = "";
     comparisonHost.append(buildRpsGollacComparisonTable(karasekScores, copsoqScores));
     const correspondanceScores = computeRpsGollacCorrespondanceScores(
@@ -3436,10 +3718,11 @@ function renderRpsGollacIndividualView() {
 
   contentRoot.append(
     title,
-    subtitle,
     intro,
     actions,
     plotPanel,
+    reportHeading,
+    reportHost,
     resultsHeading,
     comparisonHost,
     karasekInput,
@@ -3556,11 +3839,7 @@ function renderRpsGollacMultiIndividualsView() {
 
   const title = document.createElement("h2");
   title.className = "content-title";
-  title.textContent = "Rapprochement RPS";
-
-  const subtitle = document.createElement("p");
-  subtitle.className = "content-subtitle";
-  subtitle.textContent = "Rapprochement RPS de plusieurs individus";
+  title.textContent = "Rapprochement RPS de plusieurs individus";
 
   const intro = document.createElement("article");
   intro.className = "content-card";
@@ -3613,6 +3892,10 @@ function renderRpsGollacMultiIndividualsView() {
   detailsHeading.textContent = "Détail des fichiers chargés";
   const detailsHost = document.createElement("div");
 
+  const reportHeading = document.createElement("h3");
+  reportHeading.textContent = "Actions prioritaires";
+  const reportHost = document.createElement("div");
+
   function updateStatusLabels() {
     karasekStatus.textContent = rpsMultiKarasekFiles.length
       ? `${rpsMultiKarasekFiles.length} fichier(s) Karasek-Siegrist chargé(s).`
@@ -3642,6 +3925,8 @@ function renderRpsGollacMultiIndividualsView() {
     detailsHost.append(
       buildRpsGollacGroupsFileDetails([...rpsMultiKarasekBatches, ...rpsMultiCopsoqBatches], { showSwatch: false }),
     );
+    reportHost.innerHTML = "";
+    reportHost.append(buildCopsoqActionsPrioritairesTable(rpsMultiCopsoqFiles));
   }
 
   karasekBtn.addEventListener("click", () => karasekInput.click());
@@ -3705,12 +3990,13 @@ function renderRpsGollacMultiIndividualsView() {
 
   contentRoot.append(
     title,
-    subtitle,
     intro,
     actions,
     plotPanel,
     resultsHeading,
     comparisonHost,
+    reportHeading,
+    reportHost,
     detailsHeading,
     detailsHost,
     karasekInput,
@@ -4405,11 +4691,7 @@ function renderRpsGollacGroupsView() {
 
   const title = document.createElement("h2");
   title.className = "content-title";
-  title.textContent = "Rapprochement RPS";
-
-  const subtitle = document.createElement("p");
-  subtitle.className = "content-subtitle";
-  subtitle.textContent = "Rapprochement RPS de groupes";
+  title.textContent = "Rapprochement RPS de groupes";
 
   const intro = document.createElement("article");
   intro.className = "content-card";
@@ -4470,6 +4752,10 @@ function renderRpsGollacGroupsView() {
   detailsHeading.textContent = "Détail des fichiers par lot";
   const detailsHost = document.createElement("div");
 
+  const reportHeading = document.createElement("h3");
+  reportHeading.textContent = "Actions prioritaires";
+  const reportHost = document.createElement("div");
+
   // null = vue par défaut (tous les lots superposés) ; sinon numéro du lot affiché seul.
   let selectedLotNumber = null;
 
@@ -4520,6 +4806,12 @@ function renderRpsGollacGroupsView() {
     comparisonHost.append(buildRpsGollacGroupsTable(rpsGroupEntries));
     detailsHost.innerHTML = "";
     detailsHost.append(buildRpsGollacGroupsFileDetails(rpsGroupEntries));
+    reportHost.innerHTML = "";
+    reportHost.append(
+      buildCopsoqActionsPrioritairesTable(
+        rpsGroupEntries.filter((entry) => entry.type === "copsoq").flatMap((entry) => entry.files),
+      ),
+    );
     renderLotButtons();
     renderPlot();
   }
@@ -4583,7 +4875,6 @@ function renderRpsGollacGroupsView() {
 
   contentRoot.append(
     title,
-    subtitle,
     intro,
     actions,
     summaryHeading,
@@ -4592,6 +4883,8 @@ function renderRpsGollacGroupsView() {
     plotPanel,
     resultsHeading,
     comparisonHost,
+    reportHeading,
+    reportHost,
     detailsHeading,
     detailsHost,
     karasekInput,
@@ -4601,9 +4894,90 @@ function renderRpsGollacGroupsView() {
   scrollToPageTop();
 }
 
+// Crée un lien icône de navigation interne (SPA) pour l'en-tête, ex. « A propos »/« Aide ».
+function createHeaderNavIconLink(label, contentId, iconMarkup) {
+  const link = document.createElement("a");
+  link.className = "header-icon-link";
+  link.href = `#${contentId}`;
+  link.setAttribute("aria-label", label);
+  link.innerHTML = iconMarkup;
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    openContent(contentId);
+    closeHamburgerMenu();
+  });
+  return link;
+}
+
+// Liens « A propos »/« Aide » (navigation interne) et GitHub/Creative Commons (externes) affichés
+// dans l'en-tête (icônes seules), à gauche du bouton hamburger.
+function renderHeaderExternalLinks() {
+  const headerActions = document.querySelector(".header-actions");
+  if (!headerActions || !menuHamburgerBtn) {
+    return;
+  }
+
+  // Icône « info » (Feather icons, licence MIT) pour « A propos ».
+  const aProposLink = createHeaderNavIconLink(
+    "A propos",
+    "a-propos",
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>',
+  );
+  // Icône « aide » (point d'interrogation, Feather icons, licence MIT) pour « Aide ».
+  const aideLink = createHeaderNavIconLink(
+    "Aide",
+    "aide",
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
+  );
+
+  const githubLink = document.createElement("a");
+  githubLink.className = "header-icon-link";
+  githubLink.href = externalMenuLinks.github;
+  githubLink.target = "_blank";
+  githubLink.rel = "noopener noreferrer";
+  githubLink.setAttribute("aria-label", "GitHub");
+  const githubIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  githubIcon.setAttribute("viewBox", "0 0 16 16");
+  githubIcon.setAttribute("width", "18");
+  githubIcon.setAttribute("height", "18");
+  githubIcon.setAttribute("aria-hidden", "true");
+  const githubPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  githubPath.setAttribute(
+    "d",
+    "M8 0C3.58 0 0 3.58 0 8a8.001 8.001 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.49c-2.23.49-2.69-1.08-2.69-1.08-.36-.92-.88-1.16-.88-1.16-.72-.49.06-.48.06-.48.8.06 1.22.82 1.22.82.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.58.82-2.14-.08-.2-.36-1.01.08-2.1 0 0 .67-.21 2.2.82a7.64 7.64 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.09.16 1.9.08 2.1.51.56.82 1.27.82 2.14 0 3.07-1.87 3.75-3.65 3.95.29.25.54.74.54 1.49v2.2c0 .21.14.46.55.38A8.001 8.001 0 0 0 16 8c0-4.42-3.58-8-8-8Z",
+  );
+  githubPath.setAttribute("fill", "currentColor");
+  githubIcon.append(githubPath);
+  githubLink.append(githubIcon);
+
+  const ccLink = document.createElement("a");
+  ccLink.className = "header-icon-link header-cc-link";
+  ccLink.href = externalMenuLinks["cc-by-nc-nd-4-0"];
+  ccLink.target = "_blank";
+  ccLink.rel = "noopener noreferrer";
+  ccLink.setAttribute("aria-label", "Licence Creative Commons BY-NC-ND 4.0");
+  ["cc", "by", "nc", "nd"].forEach((iconName) => {
+    const icon = document.createElement("img");
+    icon.src = `https://mirrors.creativecommons.org/presskit/icons/${iconName}.svg`;
+    icon.width = 16;
+    icon.height = 16;
+    icon.alt = "";
+    icon.setAttribute("aria-hidden", "true");
+    ccLink.append(icon);
+  });
+
+  headerActions.insertBefore(aProposLink, menuHamburgerBtn);
+  headerActions.insertBefore(aideLink, menuHamburgerBtn);
+  headerActions.insertBefore(githubLink, menuHamburgerBtn);
+  headerActions.insertBefore(ccLink, menuHamburgerBtn);
+}
+
 menuData.forEach((entry) => {
   menuRoot.append(createMenuItem(entry));
 });
+renderHeaderExternalLinks();
 
 // Keep navigation in hamburger mode by default on all screen sizes.
 closeHamburgerMenu();
@@ -4840,23 +5214,25 @@ const i18n = {
     errInvalidAnswers: (fileName) => `Le fichier ${fileName} contient une ou plusieurs réponses invalides.`,
     errReadFile: (fileName) => `Impossible de lire le fichier ${fileName}.`,
     errMixedLanguages: "Impossible de mélanger des sauvegardes françaises et anglaises lors d'un chargement multiple. (Cannot mix French and English save files in a multiple-file load.)",
+    errFileLangMismatch: (fileName) => `Le fichier ${fileName} est dans une langue différente de celle de ce menu (Français). Utilisez le menu COPSOQ correspondant à la langue du fichier.`,
     alertLoadSingleFail: "Impossible de charger la sauvegarde.",
-    alertLoadSingleSuccessCompact: (langCode) => `Sauvegarde chargée avec succès (langue détectée : ${langCode}).`,
-    alertLoadMultipleSuccessCompact: (loadedCount, langCode) => `Chargement réussi de ${loadedCount} sauvegarde(s) (langue détectée : ${langCode}).`,
     errNoValidSaves: "Aucune sauvegarde valide n'a pu être chargée.",
     fileFallback: (n) => `Sauvegarde ${n}`,
     alertLoadMultipleFail: "Impossible de charger les sauvegardes.",
-    individualsResultsTitle: "Résultats multi-individuels",
+    individualsResultsTitle: "Résultats COPSOQ multi-individuels",
     individualsResultsDesc: "Statistiques de l'ensemble et une trace polaire par fichier.",
-    groupsResultsTitle: "Résultats groupes",
+    groupsResultsTitle: "Résultats COPSOQ de groupes",
     groupsResultsDesc: "Une trace par lot et un tableau comparatif pour tous les lots importés.",
-    allIndividualsTitle: "Tous les individus",
     groupStatisticsTitle: "Statistiques comparées par lot",
     filesLabel: "Fichiers",
     loadedFileLabel: "Fichier chargé",
     fileCount: (count) => `Nombre de fichiers : ${count}`,
     batchLabel: (index) => `Lot ${index}`,
     resetImports: "Réinitialiser les imports",
+    resetImport: "Réinitialiser l'import",
+    addFilesBtn: "Ajouter des fichiers",
+    addFilesBatchBtn: "Ajouter des fichiers (nouveau lot)",
+    loadedFilesHeading: "Fichiers chargés :",
     fileHoverLabel: "Fichier",
     batchHoverLabel: "Lot",
     thScale: "Échelle",
@@ -4865,6 +5241,10 @@ const i18n = {
     thMedian: "Médiane",
     thMin: "Minimum",
     thMax: "Maximum",
+    actionsPrioritairesTitle: "Actions prioritaires",
+    thDomain: "Domaine",
+    thPriorityItems: "Items (par quartile de réponse)",
+    noCopsoqResultsForActions: "Chargez un résultat COPSOQ pour afficher les actions prioritaires.",
     alertCompleteBeforeSubmit: "Répondre à toutes les questions avant de soumettre."
   },
   en: {
@@ -4889,23 +5269,25 @@ const i18n = {
     errInvalidAnswers: (fileName) => `File ${fileName} contains one or more invalid answers.`,
     errReadFile: (fileName) => `Unable to read file ${fileName}.`,
     errMixedLanguages: "Cannot mix French and English save files in a multiple-file load.(Impossible de mélanger des sauvegardes françaises et anglaises lors d'un chargement multiple.)",
+    errFileLangMismatch: (fileName) => `File ${fileName} is in a different language than this menu (International). Use the COPSOQ menu matching the file's language.`,
     alertLoadSingleFail: "Unable to load the save file.",
-    alertLoadSingleSuccessCompact: (langCode) => `Save loaded successfully (detected language: ${langCode}).`,
-    alertLoadMultipleSuccessCompact: (loadedCount, langCode) => `Successfully loaded ${loadedCount} save file(s) (detected language: ${langCode}).`,
     errNoValidSaves: "No valid save file could be loaded.",
     fileFallback: (n) => `Save ${n}`,
     alertLoadMultipleFail: "Unable to load save files.",
-    individualsResultsTitle: "Multiple individual results",
+    individualsResultsTitle: "COPSOQ multiple individual results",
     individualsResultsDesc: "Overall statistics and one polar trace per file.",
-    groupsResultsTitle: "Group results",
+    groupsResultsTitle: "COPSOQ group results",
     groupsResultsDesc: "One trace per file set and one comparative table for all imported sets.",
-    allIndividualsTitle: "All individuals",
     groupStatisticsTitle: "Statistics by file set",
     filesLabel: "Files",
     loadedFileLabel: "Loaded file",
     fileCount: (count) => `Number of files: ${count}`,
     batchLabel: (index) => `Batch ${index}`,
     resetImports: "Reset imports",
+    resetImport: "Reset import",
+    addFilesBtn: "Add files",
+    addFilesBatchBtn: "Add files (new batch)",
+    loadedFilesHeading: "Loaded files:",
     fileHoverLabel: "File",
     batchHoverLabel: "Batch",
     thScale: "Scale",
@@ -4914,6 +5296,10 @@ const i18n = {
     thMedian: "Median",
     thMin: "Minimum",
     thMax: "Maximum",
+    actionsPrioritairesTitle: "Priority actions",
+    thDomain: "Domain",
+    thPriorityItems: "Items (by response quartile)",
+    noCopsoqResultsForActions: "Load a COPSOQ result to display priority actions.",
     alertCompleteBeforeSubmit: "Please answer all questions before submitting."
   }
 };
@@ -4928,20 +5314,6 @@ function mountCopsoq(hostElement, lang) {
       <div class="copsoq-root">
         <div class="copsoq-layout">
           <section class="copsoq-content-area">
-            <div id="languageSelector" class="copsoq-language-switch" role="group" aria-label="Langue du questionnaire / Questionnaire language">
-              <button type="button" class="copsoq-language-option" data-lang="fr" aria-pressed="true">
-                <svg class="copsoq-language-icon copsoq-french-flag" viewBox="0 0 3 2" aria-hidden="true" focusable="false">
-                  <rect width="1" height="2" x="0" fill="#0055a4"></rect>
-                  <rect width="1" height="2" x="1" fill="#ffffff"></rect>
-                  <rect width="1" height="2" x="2" fill="#ef4135"></rect>
-                </svg>
-                <span>Français</span>
-              </button>
-              <button type="button" class="copsoq-language-option" data-lang="en" aria-pressed="false">
-                <span class="copsoq-language-icon" aria-hidden="true">🌐</span>
-                <span>International</span>
-              </button>
-            </div>
             <h2 id="mainTitle" class="content-title">Questionnaire COPSOQ</h2>
             <div id="copsoqIntro" class="content-subtitle">
               <p id="introP1">Répondre à chaque question en sélectionnant la réponse qui correspond le mieux à votre situation.</p>
@@ -4949,9 +5321,13 @@ function mountCopsoq(hostElement, lang) {
             </div>
             <form id="copsocForm" class="questionnaire-form"></form>
             <div id="resultsSection" class="copsoq-results-section">
-              <h3 id="resultsTitle">Résultats du Questionnaire COPSOQ</h3>
+              <div class="content-title-row">
+                <h3 id="resultsTitle" class="content-title">Résultats du Questionnaire COPSOQ</h3>
+                <button type="button" id="resultsAddFilesButton" class="secondary-btn compact-action-btn" hidden>Ajouter des fichiers</button>
+                <button type="button" id="resultsResetButton" class="secondary-btn compact-action-btn" hidden>Réinitialiser les imports</button>
+                <button type="button" id="resultsSaveButton" class="secondary-btn compact-action-btn copsoq-results-save" hidden>Sauvegarder dans un fichier</button>
+              </div>
               <p id="resultsDesc">Voici un aperçu graphique de votre profil ainsi que les réponses détaillées par domaine et échelle :</p>
-              <button type="button" id="resultsSaveButton" class="secondary-btn copsoq-results-save" hidden>Sauvegarder dans un fichier</button>
               <div class="results-layout copsoq-results-layout">
                 <div id="resultsContent" class="results-table-wrap copsoq-results-details"></div>
                 <section class="plot-panel copsoq-plots-panel">
@@ -4959,6 +5335,7 @@ function mountCopsoq(hostElement, lang) {
                   <div id="overallChartContainer" class="copsoq-chart-card" style="display:none"></div>
                 </section>
               </div>
+              <div id="copsoqFilesSection" class="karasek-individual-files-section" hidden></div>
             </div>
           </section>
         </div>
@@ -4967,9 +5344,6 @@ function mountCopsoq(hostElement, lang) {
 
     currentLang = resolveLang(lang || 'fr');
     currentQuestions = getQuestionSetForLang(currentLang);
-    hostElement.querySelectorAll('.copsoq-language-option').forEach(button => {
-      button.addEventListener('click', () => selectLanguage(button.dataset.lang));
-    });
     hostElement.querySelector('#resultsSaveButton').addEventListener('click', saveFormToFile);
     selectLanguage(currentLang);
 }
@@ -5007,6 +5381,7 @@ function selectLanguage(lang) {
   const intro = document.getElementById('copsoqIntro');
   if (intro) intro.hidden = false;
   document.getElementById('mainTitle').textContent = t.title;
+  document.getElementById('mainTitle').hidden = false;
   document.getElementById('introP1').textContent = t.intro1;
   document.getElementById('introP2').textContent = t.intro2;
   document.getElementById('resultsTitle').textContent = t.resultsTitle;
@@ -5022,6 +5397,10 @@ function selectLanguage(lang) {
   if (resultsSection) resultsSection.style.display = 'none';
   const resultsSaveButton = document.getElementById('resultsSaveButton');
   if (resultsSaveButton) resultsSaveButton.hidden = true;
+  const resultsResetButton = document.getElementById('resultsResetButton');
+  if (resultsResetButton) resultsResetButton.hidden = true;
+  const resultsAddFilesButton = document.getElementById('resultsAddFilesButton');
+  if (resultsAddFilesButton) resultsAddFilesButton.hidden = true;
   ['myDiv', 'overallChartContainer'].forEach(id => {
     const container = document.getElementById(id);
     if (!container) return;
@@ -5031,14 +5410,10 @@ function selectLanguage(lang) {
   });
   const resultsContent = document.getElementById('resultsContent');
   if (resultsContent) resultsContent.innerHTML = '';
-  const selector = document.getElementById('languageSelector');
-  if (selector) {
-    selector.hidden = false;
-    selector.querySelectorAll('.copsoq-language-option').forEach(button => {
-      const isActive = button.dataset.lang === currentLang;
-      button.classList.toggle('active', isActive);
-      button.setAttribute('aria-pressed', String(isActive));
-    });
+  const copsoqFilesSection = document.getElementById('copsoqFilesSection');
+  if (copsoqFilesSection) {
+    copsoqFilesSection.hidden = true;
+    copsoqFilesSection.innerHTML = '';
   }
 }
 function shuffle(array) {
@@ -5209,9 +5584,6 @@ function countQuestionTextMatches(savedAnswers, questionSet) {
     return count;
   }, 0);
 }
-function formatLangCode(lang) {
-  return resolveLang(lang) === 'en' ? 'EN' : 'FR';
-}
 function inferSavedPayloadLang(parsed) {
   const hasDeclaredLang = parsed && typeof parsed.lang === 'string' && parsed.lang.trim().length > 0;
   const declaredLang = hasDeclaredLang ? resolveLang(parsed.lang) : null;
@@ -5292,14 +5664,18 @@ function ensureResultsVisible(titleText, descriptionText, showSaveButton = false
     console.warn('COPSOQ form container is missing; results view cannot be shown.');
     return;
   }
+  const mainTitle = document.getElementById('mainTitle');
+  if (mainTitle) mainTitle.hidden = true;
   document.getElementById('resultsTitle').textContent = titleText || tr().resultsTitle;
   document.getElementById('resultsDesc').textContent = descriptionText || tr().resultsDesc;
-  const selector = document.getElementById('languageSelector');
-  if (selector) selector.hidden = true;
   const intro = document.getElementById('copsoqIntro');
   if (intro) intro.hidden = true;
   const resultsSaveButton = document.getElementById('resultsSaveButton');
   if (resultsSaveButton) resultsSaveButton.hidden = !showSaveButton;
+  const resultsResetButton = document.getElementById('resultsResetButton');
+  if (resultsResetButton) resultsResetButton.hidden = true;
+  const resultsAddFilesButton = document.getElementById('resultsAddFilesButton');
+  if (resultsAddFilesButton) resultsAddFilesButton.hidden = true;
   form.style.display = 'none';
   const submitBtn = document.getElementById('submitButton');
   if (submitBtn) submitBtn.style.display = 'none';
@@ -5307,21 +5683,56 @@ function ensureResultsVisible(titleText, descriptionText, showSaveButton = false
   resultsSection.style.display = 'block';
   updateActionButtons();
   scrollToPageTop();
+  // Un graphique déjà tracé pendant que resultsSection était masqué (display:none) se fige avec une
+  // taille incorrecte (ex. renderOverallChart appelé avant ce point dans displayResults) : on le
+  // redimensionne une fois la section réellement visible.
+  // Un graphique déjà tracé pendant que resultsSection était masqué (display:none) se fige avec une
+  // taille incorrecte (ex. renderOverallChart appelé avant ce point dans displayResults) : on le
+  // redimensionne maintenant que la section est réellement visible (synchrone, sans requestAnimationFrame :
+  // le changement de display ci-dessus est déjà appliqué, la mesure de layout est donc déjà à jour).
+  ['myDiv', 'overallChartContainer'].forEach(id => {
+    const chartContainer = document.getElementById(id);
+    if (!chartContainer || chartContainer.style.display === 'none') return;
+    if (typeof Plotly === 'undefined' || !Plotly.Plots || typeof Plotly.Plots.resize !== 'function') return;
+    Plotly.Plots.resize(chartContainer);
+  });
+}
+// Aligne la hauteur de resultsContent sur celle du panneau des graphiques Plotly affichés (1 ou 2 selon la vue).
+function syncCopsoqResultsContentHeight() {
+  const resultsContent = document.getElementById('resultsContent');
+  const plotsPanel = document.querySelector('.copsoq-plots-panel');
+  if (!resultsContent || !plotsPanel) return;
+  const panelHeight = plotsPanel.offsetHeight;
+  if (panelHeight > 0) {
+    // .copsoq-results-details a un max-height CSS fixe (min(78vh,840px)) qui plafonnerait sinon la
+    // hauteur imposée ci-dessous dès que le panneau des graphiques dépasse cette limite (ex. les 2
+    // graphiques empilés).
+    resultsContent.style.maxHeight = `${panelHeight}px`;
+    resultsContent.style.height = `${panelHeight}px`;
+  }
+}
+// Applique un résultat COPSOQ (fichier unique) déjà chargé, réutilisé pour le rendu initial comme
+// pour réafficher un import précédent sans rouvrir le sélecteur de fichier.
+// La langue est désormais fixée par l'élément de menu (ensureCopsoqLanguage) : on affiche le
+// résultat tel quel, sans jamais changer currentLang ici (voir loadSingleFormFile pour le rejet
+// des fichiers dont la langue ne correspond pas à l'élément de menu sélectionné).
+function applyCopsoqSingleResult(data) {
+  displayLoadedSingleFileResults(data.answers, data.fileName);
+  ensureResultsVisible();
+  showCopsoqResetImportsButton('single');
+  sunburstChart(data.answers);
+  syncCopsoqResultsContentHeight();
 }
 async function loadSingleFormFile(event) {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
   try {
     const data = await readSavedFile(file);
-    if (data.lang !== currentLang) {
-      currentLang = data.lang;
-      currentQuestions = getQuestionSetForLang(currentLang);
-      selectLanguage(currentLang);
+    if (resolveLang(data.lang) !== currentLang) {
+      throw new Error(tr().errFileLangMismatch(file.name));
     }
-    displayLoadedSingleFileResults(data.answers, data.fileName);
-    ensureResultsVisible();
-    sunburstChart(data.answers);
-    alert(tr().alertLoadSingleSuccessCompact(formatLangCode(data.lang || currentLang)));
+    copsoqImportedSingleByLang[currentLang] = data;
+    applyCopsoqSingleResult(data);
   } catch (error) {
     alert(error.message || tr().alertLoadSingleFail);
   } finally {
@@ -5340,39 +5751,27 @@ async function loadMultipleFormFiles(event, mode = 'individuals') {
       throw new Error(tr().errMixedLanguages);
     }
     const batchLang = resolveLang(loadedFiles[0].lang);
-    const existingFiles = mode === 'group'
-      ? copsoqImportedGroupBatches.flatMap(batch => batch.individuals)
-      : copsoqImportedIndividuals;
-    if (
-      existingFiles.length > 0 &&
-      resolveLang(existingFiles[0].lang) !== batchLang
-    ) {
-      throw new Error(tr().errMixedLanguages);
-    }
-    if (batchLang && batchLang !== currentLang) {
-      currentLang = resolveLang(batchLang);
-      currentQuestions = getQuestionSetForLang(currentLang);
-      selectLanguage(currentLang);
+    if (batchLang !== currentLang) {
+      throw new Error(tr().errFileLangMismatch(files[0].name));
     }
     if (mode === 'group') {
-      const batchIndex = copsoqImportedGroupBatches.length + 1;
-      copsoqImportedGroupBatches = [
-        ...copsoqImportedGroupBatches,
+      const batchIndex = copsoqImportedGroupBatchesByLang[currentLang].length + 1;
+      copsoqImportedGroupBatchesByLang[currentLang] = [
+        ...copsoqImportedGroupBatchesByLang[currentLang],
         {
           label: tr().batchLabel(batchIndex),
           lang: batchLang,
           individuals: loadedFiles,
         },
       ];
-      renderCopsoqGroupView(copsoqImportedGroupBatches);
+      renderCopsoqGroupView(copsoqImportedGroupBatchesByLang[currentLang]);
     } else {
-      copsoqImportedIndividuals = [...copsoqImportedIndividuals, ...loadedFiles];
-      renderCopsoqIndividualsView(copsoqImportedIndividuals);
+      copsoqImportedIndividualsByLang[currentLang] = [
+        ...copsoqImportedIndividualsByLang[currentLang],
+        ...loadedFiles,
+      ];
+      renderCopsoqIndividualsView(copsoqImportedIndividualsByLang[currentLang]);
     }
-    alert(tr().alertLoadMultipleSuccessCompact(
-      loadedFiles.length,
-      formatLangCode(batchLang || currentLang),
-    ));
   } catch (error) {
     alert(error.message || tr().alertLoadMultipleFail);
   } finally {
@@ -5544,6 +5943,7 @@ function displayLoadedSingleFileResults(data, fileName) {
       count: scaleScores.length
     };
   }
+  resultsContent.appendChild(buildCopsoqActionsPrioritairesSection([{ answers: data }], currentLang));
   renderOverallChart(domainScores);
 }
 function buildCopsoqAggregateStatistics(loadedFiles) {
@@ -5614,27 +6014,10 @@ function buildCopsoqGroupLineSwatch(color) {
 function appendCopsoqStatisticsSection(container, loadedFiles, titleText) {
   const section = document.createElement('section');
   section.className = 'polar-statistics-section copsoq-statistics-section';
-  const title = document.createElement('h3');
-  title.textContent = titleText;
   const count = document.createElement('p');
   count.className = 'content-subtitle';
   count.textContent = tr().fileCount(loadedFiles.length);
-  section.append(title, count);
-  const fileLegend = document.createElement('ul');
-  fileLegend.className = 'copsoq-individual-file-legend';
-  fileLegend.setAttribute('aria-label', tr().filesLabel);
-  loadedFiles.forEach((loadedFile, fileIndex) => {
-    const item = document.createElement('li');
-    const lineSwatch = document.createElement('span');
-    lineSwatch.className = 'copsoq-individual-line-swatch';
-    lineSwatch.style.backgroundColor = getCopsoqFileColor(fileIndex);
-    lineSwatch.setAttribute('aria-hidden', 'true');
-    const name = document.createElement('span');
-    name.textContent = loadedFile.fileName || tr().fileFallback(fileIndex + 1);
-    item.append(lineSwatch, name);
-    fileLegend.appendChild(item);
-  });
-  section.appendChild(fileLegend);
+  section.append(count);
   const { scaleValuesByDomain, questionValuesByDomain } = buildCopsoqAggregateStatistics(loadedFiles);
   for (const domaine in scaleValuesByDomain) {
     const domainCard = document.createElement('div');
@@ -5715,30 +6098,6 @@ function appendCopsoqGroupStatisticsSection(container, groupBatches) {
     individuals: batch.individuals,
     statistics: buildCopsoqAggregateStatistics(batch.individuals),
   }));
-  const batchList = document.createElement('div');
-  batchList.className = 'copsoq-group-set-list';
-  batchSummaries.forEach(batch => {
-    const batchItem = document.createElement('section');
-    batchItem.className = 'copsoq-group-set-item';
-    const batchHeading = document.createElement('div');
-    batchHeading.className = 'copsoq-group-set-heading';
-    const batchName = document.createElement('strong');
-    batchName.textContent = batch.label;
-    const fileCount = document.createElement('span');
-    fileCount.textContent = tr().fileCount(batch.individuals.length);
-    batchHeading.append(buildCopsoqGroupLineSwatch(batch.color), batchName, fileCount);
-    const fileList = document.createElement('ul');
-    fileList.className = 'copsoq-group-file-list';
-    fileList.setAttribute('aria-label', `${tr().filesLabel} — ${batch.label}`);
-    batch.individuals.forEach((file, fileIndex) => {
-      const fileItem = document.createElement('li');
-      fileItem.textContent = file.fileName || tr().fileFallback(fileIndex + 1);
-      fileList.appendChild(fileItem);
-    });
-    batchItem.append(batchHeading, fileList);
-    batchList.appendChild(batchItem);
-  });
-  section.appendChild(batchList);
 
   const tableWrap = document.createElement('div');
   tableWrap.className = 'copsoq-group-summary-table-wrap';
@@ -5811,35 +6170,113 @@ function appendCopsoqGroupStatisticsSection(container, groupBatches) {
   section.appendChild(tableWrap);
   container.appendChild(section);
 }
-function createCopsoqResetImportsButton(mode) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'secondary-btn compact-action-btn';
-  button.textContent = tr().resetImports;
-  button.addEventListener('click', () => {
+// Configure les boutons persistants "Ajouter des fichiers"/"Réinitialiser l'import(s)" (dans la
+// ligne de titre des résultats) selon le mode affiché, au lieu d'en créer de nouveaux à chaque rendu.
+function showCopsoqResetImportsButton(mode) {
+  const resetButton = document.getElementById('resultsResetButton');
+  const addButton = document.getElementById('resultsAddFilesButton');
+  if (resetButton) {
+    resetButton.textContent = mode === 'single' ? tr().resetImport : tr().resetImports;
+    resetButton.onclick = () => {
+      if (mode === 'single') {
+        copsoqImportedSingleByLang[currentLang] = null;
+        triggerCopsoqSingleImport(currentLang);
+      } else if (mode === 'group') {
+        copsoqImportedGroupBatchesByLang[currentLang] = [];
+        triggerCopsoqGroupImport(currentLang);
+      } else {
+        copsoqImportedIndividualsByLang[currentLang] = [];
+        triggerCopsoqIndividualsImport(currentLang);
+      }
+    };
+    resetButton.hidden = false;
+  }
+  if (addButton) {
     if (mode === 'group') {
-      copsoqImportedGroupBatches = [];
-      triggerCopsoqGroupImport(currentLang);
+      addButton.textContent = tr().addFilesBatchBtn;
+      addButton.onclick = () => triggerCopsoqGroupImport(currentLang);
+      addButton.hidden = false;
+    } else if (mode === 'individuals') {
+      addButton.textContent = tr().addFilesBtn;
+      addButton.onclick = () => triggerCopsoqIndividualsImport(currentLang);
+      addButton.hidden = false;
     } else {
-      copsoqImportedIndividuals = [];
-      triggerCopsoqIndividualsImport(currentLang);
+      addButton.hidden = true;
     }
+  }
+}
+function buildCopsoqIndividualsFileListSection(loadedFiles) {
+  const section = document.createElement('div');
+  section.className = 'karasek-individual-files-section';
+  const heading = document.createElement('p');
+  heading.className = 'content-subtitle';
+  heading.textContent = tr().loadedFilesHeading;
+  const fileLegend = document.createElement('ul');
+  fileLegend.className = 'copsoq-individual-file-legend';
+  fileLegend.setAttribute('aria-label', tr().filesLabel);
+  loadedFiles.forEach((loadedFile, fileIndex) => {
+    const item = document.createElement('li');
+    const lineSwatch = document.createElement('span');
+    lineSwatch.className = 'copsoq-individual-line-swatch';
+    lineSwatch.style.backgroundColor = getCopsoqFileColor(fileIndex);
+    lineSwatch.setAttribute('aria-hidden', 'true');
+    const name = document.createElement('span');
+    name.textContent = loadedFile.fileName || tr().fileFallback(fileIndex + 1);
+    item.append(lineSwatch, name);
+    fileLegend.appendChild(item);
   });
-  return button;
+  section.append(heading, fileLegend);
+  return section;
+}
+function buildCopsoqGroupFileListSection(groupBatches) {
+  const section = document.createElement('div');
+  section.className = 'karasek-individual-files-section';
+  const batchList = document.createElement('div');
+  batchList.className = 'copsoq-group-set-list';
+  groupBatches.forEach((batch, batchIndex) => {
+    const batchItem = document.createElement('section');
+    batchItem.className = 'copsoq-group-set-item';
+    const batchHeading = document.createElement('div');
+    batchHeading.className = 'copsoq-group-set-heading';
+    const batchName = document.createElement('strong');
+    batchName.textContent = batch.label;
+    const fileCount = document.createElement('span');
+    fileCount.textContent = tr().fileCount(batch.individuals.length);
+    batchHeading.append(buildCopsoqGroupLineSwatch(getCopsoqBatchColor(batchIndex)), batchName, fileCount);
+    const fileList = document.createElement('ul');
+    fileList.className = 'copsoq-group-file-list';
+    fileList.setAttribute('aria-label', `${tr().filesLabel} — ${batch.label}`);
+    batch.individuals.forEach((file, fileIndex) => {
+      const fileItem = document.createElement('li');
+      fileItem.textContent = file.fileName || tr().fileFallback(fileIndex + 1);
+      fileList.appendChild(fileItem);
+    });
+    batchItem.append(batchHeading, fileList);
+    batchList.appendChild(batchItem);
+  });
+  section.appendChild(batchList);
+  return section;
 }
 function renderCopsoqIndividualsView(loadedFiles) {
   if (!loadedFiles.length) return;
   const resultsContent = document.getElementById('resultsContent');
   if (!resultsContent) return;
   resultsContent.innerHTML = '';
-  resultsContent.appendChild(createCopsoqResetImportsButton('individuals'));
-  appendCopsoqStatisticsSection(resultsContent, loadedFiles, tr().allIndividualsTitle);
+  appendCopsoqStatisticsSection(resultsContent, loadedFiles);
+  resultsContent.appendChild(buildCopsoqActionsPrioritairesSection(loadedFiles, currentLang));
   const labels = getCopsoqDomainLabels(loadedFiles);
   const datasets = loadedFiles.map((loadedFile, fileIndex) =>
     buildCopsoqFileDataset(loadedFile, fileIndex, labels),
   );
   clearSunburstChart();
   ensureResultsVisible(tr().individualsResultsTitle, tr().individualsResultsDesc);
+  showCopsoqResetImportsButton('individuals');
+  const filesSection = document.getElementById('copsoqFilesSection');
+  if (filesSection) {
+    filesSection.innerHTML = '';
+    filesSection.appendChild(buildCopsoqIndividualsFileListSection(loadedFiles));
+    filesSection.hidden = false;
+  }
   renderOverallChart(labels, datasets);
 }
 function renderCopsoqGroupView(groupBatches) {
@@ -5847,8 +6284,8 @@ function renderCopsoqGroupView(groupBatches) {
   const resultsContent = document.getElementById('resultsContent');
   if (!resultsContent) return;
   resultsContent.innerHTML = '';
-  resultsContent.appendChild(createCopsoqResetImportsButton('group'));
   appendCopsoqGroupStatisticsSection(resultsContent, groupBatches);
+  resultsContent.appendChild(buildCopsoqActionsPrioritairesSection(groupBatches.flatMap((batch) => batch.individuals), currentLang));
   const allFiles = groupBatches.flatMap(batch => batch.individuals);
   const labels = getCopsoqDomainLabels(allFiles);
   const datasets = groupBatches.map((batch, batchIndex) => ({
@@ -5866,13 +6303,23 @@ function renderCopsoqGroupView(groupBatches) {
   }));
   clearSunburstChart();
   ensureResultsVisible(tr().groupsResultsTitle, tr().groupsResultsDesc);
+  showCopsoqResetImportsButton('group');
+  const filesSection = document.getElementById('copsoqFilesSection');
+  if (filesSection) {
+    filesSection.innerHTML = '';
+    filesSection.appendChild(buildCopsoqGroupFileListSection(groupBatches));
+    filesSection.hidden = false;
+  }
   renderOverallChart(labels, datasets);
+  syncCopsoqResultsContentHeight();
 }
 function ensureCopsoqFullscreenBehavior(container) {
   if (!container || container.dataset.copsoqFullscreenBound === 'true') return;
   container.dataset.copsoqFullscreenBound = 'true';
+  // setTimeout plutôt que requestAnimationFrame : rAF est mis en pause tant que l'onglet n'est pas au
+  // premier plan/visible, ce qui empêchait le redimensionnement de s'exécuter dans certains contextes.
   const resizePlot = layoutUpdate => {
-    requestAnimationFrame(() => requestAnimationFrame(() => {
+    setTimeout(() => {
       if (!container.isConnected || typeof Plotly === 'undefined') return;
       const finishResize = () => {
         if (Plotly.Plots && typeof Plotly.Plots.resize === 'function') {
@@ -5882,11 +6329,20 @@ function ensureCopsoqFullscreenBehavior(container) {
       if (layoutUpdate && typeof Plotly.relayout === 'function') {
         Plotly.relayout(container, layoutUpdate).then(finishResize);
       } else finishResize();
-    }));
+    }, 60);
   };
   document.addEventListener('fullscreenchange', () => {
     if (document.fullscreenElement === container) {
-      resizePlot({ width: null, height: null });
+      // Passer width/height à null ne force pas toujours Plotly à recalculer via autosize (constaté
+      // sur le sunburst COPSOQ, tronqué en bas) : on mesure directement la taille réelle du conteneur
+      // une fois passé en plein écran et on l'impose explicitement.
+      setTimeout(() => {
+        if (!container.isConnected) return;
+        const rect = container.getBoundingClientRect();
+        const width = Math.round(rect.width);
+        const height = Math.round(rect.height);
+        resizePlot(width > 0 && height > 0 ? { width, height } : { width: null, height: null });
+      }, 60);
       return;
     }
     if (!container.dataset.copsoqRestorePending) return;
@@ -6001,7 +6457,7 @@ function renderOverallChart(labelsOrDomainScores, datasets) {
     },
     showlegend: false,
     dragmode: false,
-    margin: { l: 20, r: 20, t: 24, b: 20 },
+    margin: { l: 40, r: 40, t: 44, b: 40 },
     font: { size: 16 }
   };
   const config = {
@@ -6049,7 +6505,7 @@ function renderOverallChart(labelsOrDomainScores, datasets) {
   };
   Plotly.purge(overallChartContainer);
   Plotly.newPlot(overallChartContainer, traces, layout, config).then(() => {
-    requestAnimationFrame(() => Plotly.Plots.resize(overallChartContainer));
+    setTimeout(() => Plotly.Plots.resize(overallChartContainer), 0);
   });
 }
 function displayResults() {
@@ -6128,9 +6584,11 @@ function displayResults() {
       count: scaleScores.length
     };
   }
+  resultsContent.appendChild(buildCopsoqActionsPrioritairesSection([{ answers }], currentLang));
   renderOverallChart(domainScores);
   ensureResultsVisible(undefined, undefined, true);
   sunburstChart();
+  syncCopsoqResultsContentHeight();
 }
 function submitForm() {
   const form = getCopsoqForm();
@@ -6274,7 +6732,7 @@ function sunburstChart(sourceAnswers) {
   Plotly.newPlot(sunburstContainer, [trace], {
     autosize: true,
     height: Math.max(650, Math.round(window.innerHeight * 0.72)),
-    margin: { l: 0, r: 0, t: 0, b: 0 },
+    margin: { l: 20, r: 20, t: 20, b: 20 },
     paper_bgcolor: 'rgba(255,255,255,1)',
     plot_bgcolor: 'rgba(255,255,255,1)',
     font: { size: 16 }
@@ -6291,8 +6749,6 @@ function sunburstChart(sourceAnswers) {
     modeBarButtonsToAdd: [
       getPlotImageExportButton(sunburstContainer, {
         title: getCopsoqSunburstExportTitle(),
-        legendTitle: currentLang === 'en' ? 'Legend' : 'Légende',
-        legendItems: getCopsoqScoreExportLegendItems(),
         filename: `copsoq_sunburst-${Date.now()}`,
         width: 1600,
         height: 1600,
@@ -6314,6 +6770,6 @@ function sunburstChart(sourceAnswers) {
     scrollZoom: false,
     displayModeBar: true
   }).then(() => {
-    requestAnimationFrame(() => Plotly.Plots.resize(sunburstContainer));
+    setTimeout(() => Plotly.Plots.resize(sunburstContainer), 0);
   });
 }
