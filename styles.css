@@ -76,25 +76,6 @@ h1 {
   font-size: clamp(1.15rem, 1.9vw, 1.5rem);
   line-height: 1.15;
 }
-.install-btn {
-  margin: 0;
-  border: 0;
-  border-radius: 999px;
-  padding: 8px 12px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-soft));
-  color: #fefefe;
-  font: inherit;
-  font-weight: 600;
-  font-size: 0.92rem;
-  cursor: pointer;
-}
-.install-btn:hover {
-  filter: brightness(1.08);
-}
-.install-btn:focus-visible {
-  outline: 3px solid #0072B288;
-  outline-offset: 2px;
-}
 .header-icon-link {
   display: inline-flex;
   align-items: center;
@@ -339,16 +320,19 @@ h1 {
 .questionnaire-item-radio {
   grid-template-columns: 1fr;
   gap: 12px;
+  justify-self: start;
 }
 .question-item-text {
   margin: 0;
   font-weight: 600;
   line-height: 1.35;
+  justify-self: start;
 }
 .radio-group {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 8px;
+  justify-self: start;
 }
 .radio-option {
   display: inline-flex;
@@ -372,10 +356,15 @@ h1 {
   font-size: 0.92rem;
 }
 .zone-legend-color {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 1px solid #d6d6d6;
+  overflow: hidden;
+  font-size: 18px;
+  line-height: 1;
   flex-shrink: 0;
 }
 .questionnaire-actions {
@@ -411,7 +400,7 @@ h1 {
 .results-layout {
   margin-top: 18px;
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: 1fr;
   gap: 16px;
 }
 .compact-action-btn {
@@ -435,11 +424,12 @@ h1 {
 }
 .results-table-wrap {
   overflow-x: auto;
+  max-width: 100%;
 }
 .results-table {
-  width: 100%;
   border-collapse: collapse;
   font-size: 0.95rem;
+  max-width: 100%;
 }
 .results-table th,
 .results-table td {
@@ -457,18 +447,40 @@ h1 {
   width: 72px;
   text-align: center;
 }
-.rps-score-pastille-wrap {
+/* Distincte de .check-cell (largeur fixe 72px, adaptée aux pastilles/pourcentages courts des
+   tableaux de comparaison Rapprochement RPS) : la réponse Karasek ("Plutôt pas d'accord", etc.)
+   est un texte de longueur variable qui doit pouvoir s'ajuster à son propre contenu. white-space:
+   nowrap seul (sans width:1%, qui force le tableau entier à s'étirer en 100% du conteneur) suffit
+   ici : la colonne question (1re colonne, wrappable) absorbe naturellement l'espace restant. */
+.results-table td.karasek-response-cell {
+  text-align: center;
+  white-space: nowrap;
+}
+/* Sans plafond, l'auto-layout du tableau évite le retour à la ligne de la question la plus longue
+   en étirant cette colonne (et donc tout le tableau) jusqu'à quasiment toute la largeur du
+   conteneur. Cible principale : desktop/laptop 1080p non tactile, où il reste de la marge — le
+   plafond couvre la largeur naturelle de la question la plus longue (~1148px mesurés) pour éviter
+   tout retour à la ligne à cette résolution, tout en continuant à rétrécir (et donc rester
+   wrappable) sur une fenêtre plus étroite. */
+.results-table td.karasek-item-cell {
+  max-width: min(1260px, 66vw);
+}
+/* Alternating row shading for readability (Karasek questionnaire results, COPSOQ "Actions
+   prioritaires", RPS multi-individus stats) — applied per-row in JS, never on rows/cells that
+   already carry their own intentional score-based background (those always win, being inline). */
+.results-row-alt > td {
+  background-color: #eef5fa;
+}
+.rps-score-pastille {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-}
-.rps-score-pastille {
-  display: inline-block;
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  border: 1px solid #d6d6d6;
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 1;
   flex-shrink: 0;
 }
 .rps-gollac-report-items {
@@ -539,6 +551,7 @@ h1 {
 }
 .copsoq-layout {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
   gap: 20px;
 }
@@ -560,12 +573,7 @@ h1 {
   display: none;
 }
 .copsoq-results-layout {
-  grid-template-columns: minmax(360px, 0.95fr) minmax(0, 1.2fr);
   align-items: start;
-}
-.copsoq-results-details {
-  max-height: min(78vh, 840px);
-  overflow: auto;
 }
 .copsoq-plots-panel {
   display: grid;
@@ -588,6 +596,8 @@ h1 {
   min-height: 720px;
 }
 .copsoq-root .question {
+  width: fit-content;
+  max-width: 100%;
   background-color: white;
   padding: 20px;
   border-radius: 8px;
@@ -615,10 +625,10 @@ h1 {
   cursor: pointer;
 }
 .copsoq-root .summary-table {
-  width: 100%;
   border-collapse: collapse;
   margin-top: 10px;
   font-size: 0.95em;
+  max-width: 100%;
 }
 .copsoq-root .summary-table td,
 .copsoq-root .summary-table th {
@@ -629,14 +639,70 @@ h1 {
   background-color: #56B4E914;
   text-align: center;
 }
-.copsoq-root .summary-scale-row td:first-child {
+/* Table "Résultats COPSOQ multi-individuels" (cf. appendCopsoqStatisticsSection) : une seule table
+   plate à 3 niveaux (Domaine/Échelle/Item), la cellule Domaine/Échelle fusionnant (rowSpan) sa
+   propre ligne de statistiques et toutes celles des niveaux en dessous. La table "Résultats COPSOQ
+   de groupes" (cf. appendCopsoqGroupStatisticsSection) réutilise ces mêmes classes (+ une colonne
+   Lot). */
+.copsoq-root .copsoq-multi-domain-cell {
+  font-weight: 700;
+  color: #ffffff;
+  background-color: #0072B2;
+  text-align: center;
+  vertical-align: top;
+  padding-top: 16px;
+}
+.copsoq-root .copsoq-multi-scale-cell {
   font-weight: 700;
   background-color: #56B4E926;
+  text-align: center;
+  vertical-align: top;
+  padding-top: 16px;
+  max-width: min(220px, 16vw);
 }
-.copsoq-root .summary-question-row td:first-child {
+/* Sur la ligne Domaine (resp. Échelle), les cellules Échelle/Item (resp. Item) restent vides mais
+   reprennent la même couleur de fond que la cellule Domaine/Échelle fusionnée à leur gauche, pour
+   bien marquer que cette ligne ne concerne que ce niveau-là. */
+.copsoq-root .copsoq-multi-domain-fill {
+  background-color: #0072B2;
+}
+.copsoq-root .copsoq-multi-scale-fill {
+  background-color: #56B4E926;
+}
+.copsoq-root .copsoq-multi-question-cell {
   padding-left: 24px;
   font-size: 0.92em;
   color: #46515c;
+  max-width: min(900px, 46vw);
+}
+.copsoq-repartition-wrap {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+}
+.copsoq-repartition-bullet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+/* Partagée par les tables de statistiques COPSOQ (.copsoq-root) et Karasek-Siegrist
+   (.results-table), d'où l'absence de scope .copsoq-root ici contrairement aux autres règles de
+   cette table. nowrap : les 4 pastilles de répartition ne doivent jamais passer à la ligne (cf.
+   .copsoq-repartition-wrap) — les colonnes Échelle/Item, elles, restent wrappable et sont plafonnées
+   (cf. .copsoq-multi-scale-cell/.copsoq-multi-question-cell) pour laisser la place nécessaire. */
+.copsoq-repartition-cell {
+  text-align: center;
+  vertical-align: middle;
+  background: #ffffff;
+  white-space: nowrap;
 }
 .copsoq-loaded-file-heading {
   margin: 0 0 16px;
@@ -690,6 +756,24 @@ h1 {
 .karasek-selected-summary-title {
   flex-wrap: wrap;
 }
+.karasek-selected-summary-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: #eef5fa;
+  color: #0072B2;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.karasek-selected-summary-close:hover {
+  background: #56B4E933;
+}
 .karasek-import-subtitle {
   display: flex;
   align-items: center;
@@ -698,10 +782,10 @@ h1 {
   overflow-wrap: anywhere;
 }
 .karasek-individual-line-swatch {
+  display: block;
   width: 28px;
-  height: 4px;
+  height: 10px;
   flex: 0 0 28px;
-  border-radius: 2px;
 }
 .results-table td.karasek-stat-bullet-cell {
   background: #ffffff;
@@ -709,10 +793,15 @@ h1 {
   vertical-align: middle;
 }
 .karasek-stat-bullet {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 14px;
   height: 14px;
   border-radius: 50%;
+  overflow: hidden;
+  font-size: 18px;
+  line-height: 1;
 }
 .karasek-group-set-list {
   display: grid;
@@ -738,35 +827,36 @@ h1 {
   color: #46515c;
 }
 .karasek-group-line-swatch {
+  display: block;
   width: 28px;
-  height: 4px;
+  height: 10px;
   flex: 0 0 28px;
-  border-radius: 2px;
 }
 .karasek-group-file-list {
   margin: 8px 0 0 36px;
   padding-left: 18px;
   overflow-wrap: anywhere;
 }
+/* Pas de width:1% ici : combiné à l'absence de white-space:nowrap (cf. plus haut, table
+   "wrappable"), un pourcentage sur une colonne d'un tableau auto-layout fait basculer Chromium en
+   mode "étirer le tableau à 100% du conteneur" (constaté sur ce tableau spécifiquement à cause du
+   rowSpan par dimension qui rend le nombre de cellules par ligne irrégulier) — retiré pour que le
+   tableau entier redevienne fit-content, la colonne Dimension se dimensionnant alors normalement
+   sur son propre contenu (comme la table "multi-individuels", qui n'a jamais eu ce width:1%). */
 .results-table td.karasek-group-label-cell {
   font-weight: 600;
   vertical-align: middle;
-  white-space: nowrap;
-  width: 1%;
 }
 .results-table td.karasek-group-batch-cell {
-  white-space: nowrap;
   justify-content: center;
 }
-.karasek-zone-count-bullet {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  font-size: 0.78rem;
-  font-weight: 700;
+/* Lignes "Situation globale / Soutien|Reconnaissance" ajoutées après les dimensions, dans les
+   tables de statistiques Karasek-Siegrist (multi-individuelle/groupes) : mêmes fond et graisse que
+   les en-têtes (cf. .results-table th) — !important pour l'emporter sur le fond blanc des cellules
+   de pastilles/répartition (.karasek-stat-bullet-cell, .copsoq-repartition-cell). */
+.karasek-global-situation-row td {
+  background-color: #eef5fa !important;
+  font-weight: 700 !important;
 }
 .copsoq-root .copsoq-stat-bullet-cell {
   text-align: center;
@@ -805,25 +895,6 @@ h1 {
   padding-left: 18px;
   overflow-wrap: anywhere;
 }
-.copsoq-group-summary-table-wrap {
-  overflow-x: auto;
-}
-.copsoq-root .copsoq-group-summary-table {
-  min-width: 760px;
-}
-.copsoq-root .copsoq-group-domain-row th {
-  padding: 10px;
-  color: #ffffff;
-  background: #0072B2;
-  text-align: left;
-}
-.copsoq-root .copsoq-group-stat-cell {
-  min-width: 68px;
-  padding: 6px;
-  background: #ffffff;
-  text-align: center;
-  vertical-align: middle;
-}
 .copsoq-root .copsoq-group-batch-cell {
   min-width: 80px;
   font-weight: 700;
@@ -833,67 +904,16 @@ h1 {
   margin-right: 8px;
   vertical-align: middle;
 }
-.copsoq-root .summary-scale-row td.copsoq-group-batch-cell,
-.copsoq-root .summary-question-row td.copsoq-group-batch-cell {
-  padding-left: 8px;
-  color: #333333;
-  background: #ffffff;
-  font-size: 0.95em;
-}
 .copsoq-score-bullet {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 14px;
   height: 14px;
   border-radius: 50%;
-}
-.copsoq-root .domaine {
-  margin-bottom: 30px;
-  border: 1px solid #56B4E955;
-  border-radius: 8px;
-  padding: 20px;
-  background-color: #56B4E90f;
-}
-.copsoq-root .domaine-title {
-  font-size: 1.3em;
-  font-weight: 700;
-  color: #0072B2;
-  margin-bottom: 15px;
-  border-bottom: 2px solid #0072B2;
-  padding-bottom: 10px;
-}
-.copsoq-root .echelle {
-  margin-bottom: 20px;
-  padding-left: 20px;
-  border-left: 3px solid #0072B2;
-}
-.copsoq-root .echelle-title {
-  font-weight: 700;
-  color: #0072B2;
-  margin-bottom: 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.copsoq-root .scale-bullet {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
-}
-.copsoq-root .result-item {
-  margin-bottom: 8px;
-  padding: 8px;
-  background-color: white;
-  border-radius: 4px;
-}
-.copsoq-root .result-question {
-  font-weight: 500;
-  margin-bottom: 4px;
-}
-.copsoq-root .result-answer {
-  color: #555;
-  font-style: italic;
+  overflow: hidden;
+  font-size: 18px;
+  line-height: 1;
 }
 #overallChartContainer:fullscreen,
 #myDiv:fullscreen {
@@ -942,10 +962,6 @@ h1 {
   .header-row {
     gap: 8px;
   }
-  .install-btn {
-    padding: 7px 10px;
-    font-size: 0.85rem;
-  }
   .hamburger-btn {
     width: 36px;
     height: 34px;
@@ -971,20 +987,6 @@ h1 {
   }
   .submenu-link {
     padding: 10px 12px;
-  }
-  .radio-group {
-    grid-template-columns: 1fr;
-  }
-  .copsoq-layout {
-    flex-direction: column;
-  }
-}
-@media (max-width: 900px) {
-  .results-layout {
-    grid-template-columns: 1fr;
-  }
-  .copsoq-results-details {
-    max-height: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1139,4 +1141,11 @@ h1 {
   .aide-page nav.aide-toc ol {
     columns: 1;
   }
+}
+
+/* Bouton "Générer un rapport" (toutes les vues de résultats), qui télécharge un document
+   Microsoft Word (.docx) reproduisant fidèlement la vue affichée (cf. generateReportDocx() dans
+   app.js) — remplace l'ancien mécanisme d'impression/export PDF via window.print(). */
+.report-btn {
+  white-space: nowrap;
 }

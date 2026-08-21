@@ -40,7 +40,7 @@ const menuData = [
   },
 ];
 const externalMenuLinks = {
-  github: "https://github.com/leithleith/RPS",
+  github: "https://github.com/mattru_microsoft/RPS",
   "cc-by-nc-nd-4-0": "https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.fr",
 };
 const menuRoot = document.getElementById("menu");
@@ -60,14 +60,94 @@ let copsoqImportedGroupBatchesByLang = { fr: [], en: [] };
 let copsoqImportSingleInput = null;
 let copsoqImportIndividualsInput = null;
 let copsoqImportGroupInput = null;
+// Horodatage du fichier COPSOQ actuellement affiché en vue "fichier unique" (import ou soumission
+// directe), pour que le rapport Word réutilise ce même horodatage plutôt qu'un Date.now() frais —
+// cf. ensureResultsVisible (remise à null par défaut) et applyCopsoqSingleResult (le renseigne).
+let copsoqReportSourceTimestamp = null;
 let rpsMultiKarasekFiles = [];
 let rpsMultiCopsoqFiles = [];
 let rpsMultiKarasekBatches = []; // { type: 'karasek', label, fileNames, color } - single entry, grown as files are added
 let rpsMultiCopsoqBatches = []; // { type: 'copsoq', label, fileNames, color }
 let rpsGroupEntries = []; // { type: 'karasek' | 'copsoq', label, fileNames, stats, color }
+// Persisted at module level (not local to renderRpsGollacIndividualView) so the loaded files and
+// their comparison stay visible when navigating away from "Rapprochement RPS individuel" and back.
+let rpsIndividualKarasekResult = null;
+let rpsIndividualCopsoqResult = null;
 const plotLineColors = ["#0072B2", "#CC79A7", "#56B4E9", "#882255", "#332288"];
 // Paul Tol muted qualitative palette: https://sronpersonalpages.nl/~pault/#sec:colour_blindness
 const paulTolMutedColors = ["#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#CC6677", "#882255", "#AA4499"];
+// Couleurs de lignes dédiées aux plots scatter3d Karasek-Siegrist (individus/groupes/résultat
+// unique) — 8 couleurs Paul Tol muted, distinctes de plotLineColors (COPSOQ) et paulTolMutedColors
+// (Rapprochement RPS, 9 couleurs incl. #117733).
+const karasekScatter3dLineColors = ["#332288", "#88CCEE", "#44AA99", "#999933", "#DDCC77", "#CC6677", "#882255", "#AA4499"];
+// Au-delà de 8 lignes, les couleurs se répètent mais le style de trait change (solid, puis les 5
+// styles Plotly demandés dans l'ordre) pour rester visuellement distinguable.
+const karasekScatter3dDashStyles = ["solid", "dash", "dashdot", "longdash", "longdashdot", "dot"];
+function getKarasekScatter3dLineDash(index) {
+  return karasekScatter3dDashStyles[Math.floor(index / karasekScatter3dLineColors.length) % karasekScatter3dDashStyles.length];
+}
+// Approximation SVG (stroke-dasharray) de chaque style Plotly, pour que les légendes
+// karasek-individual-line-swatch/karasek-group-line-swatch reflètent le vrai style de trait du
+// plot (pas seulement sa couleur) — round linecap + tiret quasi-nul pour "dot" rend un vrai point.
+const karasekLineDashPatterns = {
+  solid: null,
+  dash: "6 4",
+  dashdot: "6 4 0.001 4",
+  longdash: "11 4",
+  longdashdot: "11 4 0.001 4",
+  dot: "0.001 5",
+};
+function buildKarasekLineDashSwatch(className, color, dash) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", className);
+  svg.setAttribute("viewBox", "0 0 28 10");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line.setAttribute("x1", "0");
+  line.setAttribute("y1", "5");
+  line.setAttribute("x2", "28");
+  line.setAttribute("y2", "5");
+  line.setAttribute("stroke", color);
+  line.setAttribute("stroke-width", "3");
+  line.setAttribute("stroke-linecap", "round");
+  const dashArray = karasekLineDashPatterns[dash];
+  if (dashArray) {
+    line.setAttribute("stroke-dasharray", dashArray);
+  }
+  svg.append(line);
+  return svg;
+}
+// Glyph approximations of each dash style, reused only for the Word report (cf.
+// convertKarasekLineSwatchesForReport) since Word's altchunk import doesn't render inline <svg>.
+const karasekReportDashGlyphs = {
+  solid: "───",
+  dash: "╌╌╌",
+  dashdot: "╌·╌",
+  longdash: "────",
+  longdashdot: "───·",
+  dot: "·····",
+};
+// Le clone de rapport ne conserve pas les <svg> (Word/altchunk ne les affiche pas) : remplace chaque
+// pastille ligne Karasek (buildKarasekLineDashSwatch) par un texte coloré dont le glyphe approxime le
+// style de trait (plein/tireté/pointillé…), seule façon de faire passer à la fois la couleur ET le
+// style dans un document Word.
+function convertKarasekLineSwatchesForReport(clone) {
+  const dashNameByPattern = new Map(
+    Object.entries(karasekLineDashPatterns).map(([name, pattern]) => [pattern || null, name]),
+  );
+  clone.querySelectorAll(".karasek-individual-line-swatch, .karasek-group-line-swatch").forEach((svg) => {
+    const line = svg.querySelector("line");
+    const color = line ? line.getAttribute("stroke") : "#000000";
+    const dashArray = line ? line.getAttribute("stroke-dasharray") : null;
+    const dashName = dashNameByPattern.get(dashArray) || "solid";
+    const glyph = document.createElement("span");
+    glyph.style.color = color;
+    glyph.style.fontWeight = "700";
+    glyph.textContent = karasekReportDashGlyphs[dashName] || karasekReportDashGlyphs.solid;
+    svg.replaceWith(glyph);
+  });
+}
 const plotImageExportIcon = {
   width: 24,
   height: 24,
@@ -142,8 +222,11 @@ async function createPlotExportDataUrl(container, options) {
   measureContext.font = `${legendFontSize}px sans-serif`;
   const legendTextWidth = overlayLegend ? 320 : width - horizontalPadding * 2 - 48;
   const legendLines = legendItems.map((item) => getPlotExportTextLines(measureContext, item.label, legendTextWidth));
+  // 42 (marge avant le titre "Légende") + 34 (espace après ce titre, avant le 1er item) : doit
+  // rester synchronisé avec les mêmes constantes utilisées par le dessin réel plus bas (branche
+  // non-overlay), sans quoi le dernier item de la légende se retrouvait tronqué hors du canvas.
   const legendHeight = !overlayLegend && legendItems.length
-    ? 58 + legendLines.reduce((height, lines) => height + Math.max(34, lines.length * 30) + 8, 0)
+    ? 42 + 34 + legendLines.reduce((height, lines) => height + Math.max(34, lines.length * 30) + 8, 0)
     : 0;
   const exportContainer = document.createElement("div");
   exportContainer.style.position = "fixed";
@@ -510,17 +593,15 @@ const contentData = {
       "Karasek-Siegrist version française | french only Karasek-Siegrist<br><a href='https://www.anact.fr/qualite-de-vie-au-travail-et-numerique-le-fact-finance-24-projets' target='_blank' rel='noopener noreferrer'>ANACT : appel à projets \"Qualité de vie au travail et numérique\"</a><br><a href='https://www.anact.fr/comment-concilier-transformation-numerique-et-qualite-de-vie-au-travail-retours-dexperiences' target='_blank' rel='noopener noreferrer'>ANACT : comment concilier transformation numérique et qualité de vie au travail - retours d'expériences</a>",
       "<a href='https://www.copsoq-network.org/assets/pdf/COPSOQ-Sante-Publique.pdf' target='_blank' rel='noopener noreferrer'>COPSOQ en versions Française</a> (<a href='https://www.copsoq-network.org/' target='_blank' rel='noopener noreferrer'>Contenu sous licence Creative Commons CC BY-NC-ND 4.0</a>)<br><a href='https://www.un.org/sites/un2.un.org/files/copsoq-network-guidelines-an-questionnaire.pdf' target='_blank' rel='noopener noreferrer'>International COPSOQ</a> (<a href='https://www.copsoq-network.org/' target='_blank' rel='noopener noreferrer'>Content under Creative Commons CC BY-NC-ND 4.0 licence</a>)",
       "Bibliothèque graphique | Plotly.js graphing library: <a href='https://plotly.com/javascript/' target='_blank' rel='noopener noreferrer'>Plotly.js</a>",
+      "Bibliothèque de conversion HTML vers DOCX | HTML to DOCX conversion library: <a href='https://github.com/evidenceprime/html-docx-js' target='_blank' rel='noopener noreferrer'>html-docx-js</a>",
+      "Bibliothèque de manipulation d'archives ZIP (mise en page A4 des rapports Word) | ZIP archive manipulation library (A4 page size for Word reports): <a href='https://stuk.github.io/jszip/' target='_blank' rel='noopener noreferrer'>JSZip</a>",
       "Palettes de couleurs accessibles | colour-blind friendly color palettes: <a href='https://jfly.uni-koeln.de/color/#pallet' target='_blank' rel='noopener noreferrer'>Okabe-Ito</a> + <a href='https://sronpersonalpages.nl/~pault/#sec:colour_blindness' target='_blank' rel='noopener noreferrer'>Paul Tol muted</a>",
       "<a href='https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.fr' target='_blank' rel='noopener noreferrer'>Contenu sous licence CC BY-NC-ND 4.0</a> | <a href='https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode.en' target='_blank' rel='noopener noreferrer'>Content under CC BY-NC-ND 4.0 licence</a>",
-      "<a href='https://opensource.org/licenses/MIT' target='_blank' rel='noopener noreferrer'>Code sous licence MIT | Code under MIT licence</a>: <a href='https://github.com/leithleith/RPS' target='_blank' rel='noopener noreferrer'><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='20' height='20'><path d='M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.263.82-.583 0-.288-.01-1.05-.015-2.06-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.238 1.84 1.238 1.07 1.835 2.807 1.305 3.492.998.108-.775.418-1.305.762-1.605-2.665-.3-5.467-1.335-5.467-5.93 0-1.31.468-2.38 1.235-3.22-.123-.303-.535-1.523.117-3.176 0 0 1.008-.322 3.3 1.23a11.52 11.52 0 013.003-.403c1.02.005 2.045.138 3.003.403 2.29-1.552 3.296-1.23 3.296-1.23.653 1.653.242 2.873.12 3.176.77.84 1.233 1.91 1.233 3.22 0 4.61-2.807 5.625-5.48 5.922.43.37.815 1.096.815 2.21 0 1.595-.015 2.88-.015 3.27 0 .322.216.698.825.58C20.565 21.795 24 17.297 24 12c0-6.63-5.37-12-12-12z'/></svg></a>",
+      "<a href='https://opensource.org/licenses/MIT' target='_blank' rel='noopener noreferrer'>Code sous licence MIT | Code under MIT licence</a>: <a href='https://github.com/mattru_microsoft/RPS' target='_blank' rel='noopener noreferrer'><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='20' height='20'><path d='M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.263.82-.583 0-.288-.01-1.05-.015-2.06-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.238 1.84 1.238 1.07 1.835 2.807 1.305 3.492.998.108-.775.418-1.305.762-1.605-2.665-.3-5.467-1.335-5.467-5.93 0-1.31.468-2.38 1.235-3.22-.123-.303-.535-1.523.117-3.176 0 0 1.008-.322 3.3 1.23a11.52 11.52 0 013.003-.403c1.02.005 2.045.138 3.003.403 2.29-1.552 3.296-1.23 3.296-1.23.653 1.653.242 2.873.12 3.176.77.84 1.233 1.91 1.233 3.22 0 4.61-2.807 5.625-5.48 5.922.43.37.815 1.096.815 2.21 0 1.595-.015 2.88-.015 3.27 0 .322.216.698.825.58C20.565 21.795 24 17.297 24 12c0-6.63-5.37-12-12-12z'/></svg></a>",
     ],
   },
 };
 
-// Page « Aide » : ancien fichier statique aide.html porté dans la SPA (menu "Aide" au même
-// titre que les autres vues, plutôt qu'un lien externe vers une page séparée) — le contenu HTML
-// ci-dessous reprend celui de l'ancien fichier ; les ancres internes (#apercu, #menu, etc.)
-// fonctionnent nativement (navigateur) puisqu'il n'y a pas de routage par hash dans cette SPA.
 function renderAideView() {
   if (!contentRoot) {
     return;
@@ -550,6 +631,7 @@ function renderAideView() {
         <li><a href="#karasek">Menu « Karasek-Siegrist »</a></li>
         <li><a href="#copsoq">Menu « COPSOQ »</a></li>
         <li><a href="#rapprochement">Menu « Rapprochement RPS »</a></li>
+        <li><a href="#rapport">Générer un rapport (export Word)</a></li>
         <li><a href="#a-propos">« A propos »</a></li>
         <li><a href="#github-licence">Liens « GitHub » et « CC BY-NC-ND 4.0 » (en-tête)</a></li>
         <li><a href="#couleurs">Lecture des couleurs et des scores</a></li>
@@ -568,7 +650,8 @@ function renderAideView() {
         <li>Recharger un ou plusieurs fichiers <code>.json</code> précédemment sauvegardés pour consulter, comparer ou regrouper des résultats (un individu, plusieurs individus, ou plusieurs groupes/lots) ;</li>
         <li>Visualiser les résultats sous forme de tableaux, de graphiques polaires, de sunburst et de diagrammes de flux (Sankey) ;</li>
         <li>Faire le <strong>rapprochement</strong> entre les résultats Karasek-Siegrist et COPSOQ au regard des 6 facteurs du rapport « Gollac » (repris par l'INRS) ;</li>
-        <li>Exporter n'importe quel graphique en image PNG et le consulter en plein écran.</li>
+        <li>Exporter n'importe quel graphique en image PNG et le consulter en plein écran ;</li>
+        <li><strong>Générer un rapport</strong> au format Microsoft Word (<code>.docx</code>) pour n'importe quel résultat affiché, fidèle à l'affichage à l'écran.</li>
       </ul>
       <p>Trois grands menus structurent l'application : <strong>Karasek-Siegrist</strong>, <strong>COPSOQ</strong> et <strong>Rapprochement RPS</strong>. Le menu Karasek-Siegrist propose 5 sous-menus : <em>Questionnaire</em>, <em>Importer un fichier</em>, <em>Importer plusieurs fichiers (individus)</em>, <em>Importer plusieurs fichiers (groupe)</em>, <em>Référentiel</em>. Le menu COPSOQ propose ces 4 mêmes fonctionnalités mais chacune dédoublée par langue (un sous-menu préfixé d'un petit drapeau français, un sous-menu préfixé d'un globe 🌐 « International ») soit 8 sous-menus, plus un unique sous-menu bilingue <em>Référentiel / References</em> (9 sous-menus au total, la langue du questionnaire/résultat étant déterminée par le sous-menu choisi plutôt que par un sélecteur dans la page). Le menu Rapprochement RPS remplace ces sous-menus par ses propres vues de comparaison (individuel, plusieurs individus, groupes) plus un sous-menu <em>Référentiel</em>.</p>
     </section>
@@ -582,7 +665,7 @@ function renderAideView() {
       </figure>
       <figure>
         <img src="docs/screenshots/menu-open.png" alt="Menu ouvert, sous-menus repliés" />
-        <figcaption>Menu ouvert : 3 entrées (Karasek-Siegrist, COPSOQ, Rapprochement RPS), alignées à droite et larges seulement de ce qui est nécessaire à leur contenu, qui se déplient au clic pour révéler leur sous-menu. Les liens « A propos », « Aide », « GitHub » et « CC BY-NC-ND 4.0 » sont affichés séparément, en icônes, à gauche du bouton hamburger.</figcaption>
+        <figcaption>Menu ouvert : 3 entrées (Karasek-Siegrist, COPSOQ, Rapprochement RPS), alignées à droite et larges seulement de ce qui est nécessaire à leur contenu, qui se déplient au clic pour révéler leur sous-menu. Les icônes « Installer l'application » (si disponible), « A propos », « Aide », « GitHub » et « CC BY-NC-ND 4.0 » sont affichées séparément, à gauche du bouton hamburger.</figcaption>
       </figure>
       <figure>
         <img src="docs/screenshots/menu-open-submenu-expanded.png" alt="Sous-menu COPSOQ déplié" />
@@ -640,6 +723,7 @@ function renderAideView() {
     <section class="aide-section" id="copsoq">
       <h2>4. Menu « COPSOQ »</h2>
       <p>Même logique que le menu Karasek-Siegrist, pour le questionnaire COPSOQ (disponible en français et en anglais), avec une différence importante : chacune des 4 fonctionnalités (Questionnaire, Importer un fichier, Importer plusieurs fichiers individus/groupes) existe en <strong>deux sous-menus distincts</strong>, un par langue — préfixé d'un petit drapeau français ou d'un globe 🌐 « International » — plutôt qu'un sélecteur de langue à l'intérieur de la page. Les fichiers chargés en français et en anglais sont conservés séparément : charger des fichiers via le sous-menu français n'a aucun effet sur ce qui est chargé côté anglais, et inversement. Si le fichier sélectionné est dans la mauvaise langue (par exemple un export anglais chargé depuis le sous-menu français), l'application refuse le chargement et affiche un message d'erreur explicite plutôt que de changer silencieusement de langue. Les résultats COPSOQ sont organisés en <strong>Domaines</strong>, eux-mêmes composés d'<strong>Échelles</strong>.</p>
+      <p>Dès qu'un résultat COPSOQ est affiché (import unique, plusieurs individus ou groupes), un tableau <strong>« Actions prioritaires »</strong> liste, pour chaque Domaine puis chaque Échelle (chacun précédé d'une pastille colorée selon son score), les items de réponse triés par quartile croissant (les plus à risque en premier) — ce même tableau est également repris dans les 3 vues du menu « Rapprochement RPS » (cf. section 5).</p>
 
       <h3 id="copsoq-questionnaire">4.1 « Questionnaire » (drapeau français / globe international)</h3>
       <p>Affiche le questionnaire vierge dans la langue du sous-menu choisi. Une fois toutes les questions répondues, un bouton « Sauvegarder dans un fichier » (sur la ligne du titre, à droite) permet de calculer et sauvegarder le résultat.</p>
@@ -685,7 +769,7 @@ function renderAideView() {
     <section class="aide-section" id="rapprochement">
       <h2>5. Menu « Rapprochement RPS »</h2>
       <p>Ce menu est le cœur analytique de l'application : il met en correspondance les résultats Karasek-Siegrist et COPSOQ au regard des <strong>6 facteurs de risques psychosociaux du rapport « Gollac »</strong> (repris par l'INRS) : Intensité du travail et temps de travail, Exigences émotionnelles, Manque d'autonomie, Rapports sociaux au travail dégradés, Conflits de valeurs, Insécurité de la situation de travail.</p>
-      <p>Toutes les vues de ce menu utilisent le même diagramme de flux (Sankey), organisé en 4 colonnes : <strong>Échelles COPSOQ → Domaines COPSOQ → Facteurs Gollac/INRS → Dimensions Karasek-Siegrist</strong>. Survoler un lien ou une étiquette met en évidence l'intégralité du chemin correspondant (en amont comme en aval).</p>
+      <p>Toutes les vues de ce menu utilisent le même diagramme de flux (Sankey), organisé en 4 colonnes : <strong>Échelles COPSOQ → Domaines COPSOQ → Facteurs Gollac/INRS → Dimensions Karasek-Siegrist</strong>. Survoler un lien ou une étiquette met en évidence l'intégralité du chemin correspondant (en amont comme en aval). Les 3 vues « Rapprochement RPS individuel/de plusieurs individus/de groupes » affichent aussi, si un résultat COPSOQ est chargé, le même tableau « Actions prioritaires » que le menu COPSOQ (cf. section 4).</p>
 
       <h3 id="rapprochement-individuel">5.1 « Rapprochement RPS individuel »</h3>
       <p>Chargez un résultat Karasek-Siegrist et/ou un résultat COPSOQ (les deux ne sont pas obligatoires) pour voir :</p>
@@ -711,7 +795,7 @@ function renderAideView() {
         <img src="docs/screenshots/rapprochement-groupes-before-click.png" alt="Rapprochement RPS de groupes, superposition de tous les lots" />
         <figcaption>Deux lots chargés : le diagramme superpose les deux, et le tableau de comparaison est rempli.</figcaption>
       </figure>
-      <p>Un bouton « Afficher uniquement le lot N » apparaît pour chaque lot (entre « Fichiers chargés par lot » et le diagramme), coloré comme son repère dans le tableau. Cliquez-le pour afficher uniquement le diagramme détaillé de ce lot : les liens reprennent la couleur du lot (pour l'identifier facilement), tandis que les étiquettes et les nœuds sont colorés selon le score de ce lot. Le bouton devient alors « Afficher tous les lots » (gris, comme les nœuds du diagramme superposé) ; cliquez-le à nouveau pour revenir à la vue de tous les lots.</p>
+      <p>Un bouton « Afficher uniquement le lot N » apparaît dans la dernière colonne (sans en-tête) de chaque ligne du tableau « Fichiers chargés par lot », coloré comme son repère dans le tableau « Comparaison des groupes ». Cliquez-le pour afficher uniquement le diagramme détaillé de ce lot : les liens reprennent la couleur du lot (pour l'identifier facilement), tandis que les étiquettes et les nœuds sont colorés selon le score de ce lot. Le bouton devient alors « Afficher tous les lots » (gris, comme les nœuds du diagramme superposé) ; cliquez-le à nouveau pour revenir à la vue de tous les lots.</p>
       <figure>
         <img src="docs/screenshots/rapprochement-groupes-lot-sankey.png" alt="Diagramme Sankey d'un lot après clic" />
         <figcaption>Diagramme Sankey affiché après un clic sur le bouton « Afficher uniquement le lot 1 » : liens couleur du lot, étiquettes et nœuds colorés selon le score.</figcaption>
@@ -725,8 +809,20 @@ function renderAideView() {
       </figure>
     </section>
 
+    <section class="aide-section" id="rapport">
+      <h2>6. Générer un rapport (export Word)</h2>
+      <p>Dès qu'un résultat est affiché — quel que soit le questionnaire (Karasek-Siegrist ou COPSOQ, français ou anglais) et quel que soit le scénario (individuel, plusieurs individus, groupes, ou n'importe quelle vue « Rapprochement RPS ») — un bouton <strong>« Générer un rapport (Word) »</strong> apparaît sur la ligne du titre (ou parmi les boutons d'action pour les vues « Rapprochement RPS »). Il télécharge directement un document Microsoft Word (<code>.docx</code>) reproduisant fidèlement (WYSIWYG) le résultat affiché à l'écran, avec :</p>
+      <ul class="feature-list">
+        <li>un en-tête reprenant le titre du rapport et un horodatage bilingue (français et anglais) ;</li>
+        <li>l'intégralité des tableaux et graphiques du résultat affiché (chaque graphique étant converti en image), sans les éléments d'interaction (menu, boutons), avec leurs couleurs conservées ;</li>
+        <li>une mise en page au format A4 avec des marges de 10 mm ;</li>
+        <li>pour les 3 vues « Rapprochement RPS » (dont le diagramme Sankey est large), une orientation paysage automatique.</li>
+      </ul>
+      <p>Le fichier <code>.docx</code> obtenu s'ouvre avec Microsoft Word (cette fonctionnalité n'est pas garantie avec d'autres logiciels comme LibreOffice ou Google Docs).</p>
+    </section>
+
     <section class="aide-section" id="a-propos">
-      <h2>6. « A propos »</h2>
+      <h2>7. « A propos »</h2>
       <p>Accessible via l'icône « i » affichée dans l'en-tête, à gauche du bouton hamburger (ce n'est plus une entrée du menu). Rappelle l'objet de l'application, les sources (Karasek-Siegrist, COPSOQ, rapport « Gollac », ANACT), les bibliothèques utilisées (Plotly.js) et les palettes de couleurs accessibles (Okabe-Ito, Paul Tol muted), ainsi que les licences (contenu sous CC BY-NC-ND 4.0, code sous licence MIT).</p>
       <figure>
         <img src="docs/screenshots/a-propos.png" alt="Page A propos" />
@@ -735,12 +831,13 @@ function renderAideView() {
     </section>
 
     <section class="aide-section" id="github-licence">
-      <h2>7. Liens « GitHub » et « CC BY-NC-ND 4.0 »</h2>
-      <p>Ces deux icônes, affichées dans l'en-tête à gauche du bouton hamburger (aux côtés des icônes « A propos » et « Aide », et non dans le menu), ouvrent dans un nouvel onglet respectivement le dépôt de code source de l'application sur GitHub et le texte complet de la licence Creative Commons BY-NC-ND 4.0 sous laquelle le contenu est publié.</p>
+      <h2>8. Liens « GitHub » et « CC BY-NC-ND 4.0 »</h2>
+      <p>Ces deux icônes, affichées dans l'en-tête à gauche du bouton hamburger (aux côtés des icônes « Installer l'application », « A propos » et « Aide », et non dans le menu), ouvrent dans un nouvel onglet respectivement le dépôt de code source de l'application sur GitHub et le texte complet de la licence Creative Commons BY-NC-ND 4.0 sous laquelle le contenu est publié.</p>
+      <p>Chacune des icônes de l'en-tête (installation, A propos, Aide, GitHub, CC BY-NC-ND 4.0) porte un attribut <code>aria-label</code> et une infobulle (<code>title</code>, visible au survol de la souris) reprenant son libellé, pour rester identifiable sans dépendre de la seule forme du pictogramme.</p>
     </section>
 
     <section class="aide-section" id="couleurs">
-      <h2>8. Lecture des couleurs et des scores</h2>
+      <h2>9. Lecture des couleurs et des scores</h2>
       <p>Toutes les échelles de score de l'application (0 à 100 pour les facteurs Gollac/INRS et les échelles/domaines COPSOQ ; 0 à 36 pour les catégories Karasek-Siegrist) utilisent la même palette de 4 couleurs, choisie pour rester lisible en cas de daltonisme (palette Okabe-Ito) :</p>
       <p>
         <span class="badge b-green">Vert #009E73</span> situation favorable/protectrice —
@@ -754,7 +851,7 @@ function renderAideView() {
     </section>
 
     <section class="aide-section" id="scenarios">
-      <h2>9. Scénarios pas-à-pas</h2>
+      <h2>10. Scénarios pas-à-pas</h2>
 
       <div class="scenario">
         <h4>Scénario A — Répondre au questionnaire et sauvegarder son résultat</h4>
@@ -812,10 +909,19 @@ function renderAideView() {
           <li>L'icône plein écran (coins) bascule le graphique en mode plein écran pour une lecture plus confortable.</li>
         </ol>
       </div>
+
+      <div class="scenario">
+        <h4>Scénario G — Générer un rapport Word</h4>
+        <ol>
+          <li>Affichez n'importe quel résultat (import individuel, multi-individus, groupes, ou une vue « Rapprochement RPS »).</li>
+          <li>Cliquez sur le bouton « Générer un rapport (Word) » (ligne du titre, ou parmi les boutons d'action pour « Rapprochement RPS »).</li>
+          <li>Un fichier <code>.docx</code> est directement téléchargé sur votre poste ; ouvrez-le avec Microsoft Word pour consulter le rapport.</li>
+        </ol>
+      </div>
     </section>
 
     <section class="aide-section" id="fichiers-exemples">
-      <h2>10. Fichiers exemples utilisés dans ce guide</h2>
+      <h2>11. Fichiers exemples utilisés dans ce guide</h2>
       <p>Les captures d'écran ci-dessus ont été réalisées avec des fichiers de résultats réels préalablement sauvegardés (dossier Téléchargements), afin d'illustrer des cas d'usage réalistes :</p>
       <table class="sample-files">
         <thead><tr><th>Rôle dans le guide</th><th>Fichier(s)</th></tr></thead>
@@ -831,9 +937,9 @@ function renderAideView() {
     </section>
 
     <section class="aide-section" id="accessibilite">
-      <h2>11. Accessibilité et installation (PWA)</h2>
+      <h2>12. Accessibilité et installation (PWA)</h2>
       <ul class="feature-list">
-        <li><strong>Application installable</strong> : un bouton d'installation apparaît dans l'en-tête sur les navigateurs compatibles, pour ajouter RPS comme application sur votre appareil (fonctionnement hors-ligne une fois installée).</li>
+        <li><strong>Application installable</strong> : une icône d'installation (même style que les icônes « A propos »/« Aide »/« GitHub »/« CC BY-NC-ND 4.0 ») apparaît dans l'en-tête sur les navigateurs compatibles, pour ajouter RPS comme application sur votre appareil (fonctionnement hors-ligne une fois installée).</li>
         <li><strong>Palettes daltonisme-friendly</strong> : Okabe-Ito pour les scores, Paul Tol muted pour les éléments structurels — testées pour rester distinguables pour les principaux types de daltonisme.</li>
         <li><strong>Menu responsive</strong> : s'adapte à la largeur d'écran disponible (bureau large, tablette, mobile).</li>
         <li><strong>Focus clavier</strong> : tous les liens et boutons du menu affichent un contour visible au focus clavier.</li>
@@ -876,6 +982,14 @@ function downloadJsonFile(payload, fileNameBase) {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+// Extrait l'horodatage Date.now() d'origine intégré dans le nom d'un fichier de sauvegarde (ex.
+// "questionnaire-karasek-siegrist-1786550140260.json") : réutilisé comme suffixe des images PNG
+// exportées pour un résultat individuel importé, afin que l'image porte le MÊME horodatage que le
+// fichier .json chargé plutôt qu'un nouveau Date.now() pris au moment de l'export.
+function getFileNameTimestamp(fileName) {
+  const match = typeof fileName === "string" ? fileName.match(/(\d{10,})/) : null;
+  return match ? match[1] : null;
 }
 function validateKarasekSavedPayload(parsed, fileName) {
   if (!parsed || parsed.type !== "karasek-siegrist" || !Array.isArray(parsed.answers)) {
@@ -1176,6 +1290,424 @@ function classifyKarasekZone(thirdScore, exigencesScore, autonomieScore) {
 function scrollToPageTop() {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
+
+// Horodatage bilingue (français + anglais) affiché en tête de chaque rapport Word exporté
+// (cf. generateReportDocx ci-dessous), formaté séparément par locale plutôt qu'avec un seul
+// Intl.DateTimeFormat pour garder un texte pleinement lisible dans les deux langues.
+function getBilingualReportDateTimeLines() {
+  const now = new Date();
+  const frDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(now);
+  const frTime = new Intl.DateTimeFormat("fr-FR", { timeStyle: "medium" }).format(now);
+  const enDate = new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(now);
+  const enTime = new Intl.DateTimeFormat("en-US", { timeStyle: "medium" }).format(now);
+  return [`Rapport généré le ${frDate} à ${frTime}`, `Report generated on ${enDate} at ${enTime}`];
+}
+
+// Échappe un texte pour une insertion sûre dans le document HTML assemblé pour l'export Word
+// (cf. buildReportHtmlDocument) : passe par le DOM plutôt que des regex ad hoc, plus fiable.
+function escapeHtmlText(text) {
+  const div = document.createElement("div");
+  div.textContent = text == null ? "" : String(text);
+  return div.innerHTML;
+}
+
+// Largeur de "page" cible (proche du contenu utile d'une page A4 avec marges de 10mm, cf. les
+// marges passées à htmlDocx.asBlob dans generateReportDocx), en pixels à 96dpi : sert à générer
+// les images statiques des graphiques à une taille fidèle à celle du document Word final.
+const DOCX_CONTENT_WIDTH_PX = { portrait: 718, landscape: 1047 };
+
+// Mesure la largeur (px) de la plus longue étiquette d'angle ("theta") d'un graphique polaire
+// (radar COPSOQ) — les étiquettes les plus longues varient selon les données (ordre des domaines),
+// donc une marge fixe ne suffit pas toujours : cf. getReportChartExtraHorizontalMargin ci-dessous.
+function measureReportChartLabelWidth(text, fontSize) {
+  if (!measureReportChartLabelWidth.ctx) {
+    measureReportChartLabelWidth.ctx = document.createElement("canvas").getContext("2d");
+  }
+  measureReportChartLabelWidth.ctx.font = `${fontSize}px "Open Sans", verdana, arial, sans-serif`;
+  return measureReportChartLabelWidth.ctx.measureText(text).width;
+}
+
+// Marge horizontale nécessaire pour qu'aucune étiquette d'angle ne déborde du cadre exporté (ex.
+// "Santé et Bien-être", "Organisation et leadership" sur le radar COPSOQ, positionnées à 0°/180°
+// donc entièrement d'un seul côté du cercle) ; 0 pour les graphiques sans axe polaire (Sankey,
+// sunburst, scatter3d), qui gardent leurs marges d'origine.
+function getReportChartExtraHorizontalMargin(gd) {
+  const fontSize = (gd.layout && gd.layout.font && gd.layout.font.size) || 12;
+  const labels = [];
+  (gd.data || []).forEach((trace) => {
+    if (Array.isArray(trace.theta)) {
+      labels.push(...trace.theta);
+    }
+  });
+  if (!labels.length) {
+    return 0;
+  }
+  const maxWidth = labels.reduce(
+    (max, label) => Math.max(max, measureReportChartLabelWidth(String(label), fontSize)),
+    0,
+  );
+  return Math.ceil(maxWidth) + 24;
+}
+
+// Capture un graphique Plotly dans un nouveau conteneur hors-écran rendu à la taille cible, plutôt
+// que d'appeler Plotly.toImage() directement sur le graphique interactif déjà affiché : indispensable
+// pour le scatter3d (WebGL) dont le canvas ne se réexportait sinon quasiment qu'en blanc (le rendu
+// WebGL du graphique existant n'a pas le temps de se redessiner avant la capture) — même technique
+// déjà utilisée et fiable pour le bouton d'export PNG (cf. createPlotExportDataUrl). Le document
+// Word produit par html-docx-js ne peut intégrer que des images (data URI), jamais de graphique
+// interactif : chaque graphique visible est donc systématiquement remplacé par un instantané PNG.
+async function createReportChartSnapshotDataUrl(gd, width, height) {
+  const exportContainer = document.createElement("div");
+  exportContainer.style.position = "fixed";
+  exportContainer.style.left = "-10000px";
+  exportContainer.style.top = "0";
+  exportContainer.style.width = `${width}px`;
+  exportContainer.style.height = `${height}px`;
+  document.body.append(exportContainer);
+  try {
+    const exportLayout = clonePlotExportValue(gd.layout || {});
+    exportLayout.autosize = false;
+    exportLayout.width = width;
+    exportLayout.height = height;
+    // Les marges d'origine (calées sur la largeur généreuse du conteneur à l'écran) sont trop
+    // justes une fois le graphique retassé à la largeur du rapport : les étiquettes d'axe les
+    // plus longues (ex. axes du radar COPSOQ) débordaient alors du cadre et se retrouvaient
+    // tronquées sur l'image exportée elle-même.
+    const extraMargin = getReportChartExtraHorizontalMargin(gd);
+    const baseMargin = exportLayout.margin || {};
+    exportLayout.margin = {
+      l: Math.max(baseMargin.l || 40, extraMargin),
+      r: Math.max(baseMargin.r || 40, extraMargin),
+      t: (baseMargin.t || 40) + 10,
+      b: (baseMargin.b || 40) + 10,
+    };
+    await Plotly.newPlot(
+      exportContainer,
+      clonePlotExportValue(gd.data || []),
+      exportLayout,
+      { staticPlot: true, responsive: false, displayModeBar: false },
+    );
+    return await Plotly.toImage(exportContainer, { format: "png", width, height, scale: 2 });
+  } finally {
+    Plotly.purge(exportContainer);
+    exportContainer.remove();
+  }
+}
+
+// Capture littérale du <svg> Sankey déjà affiché à l'écran (avec son repositionnement manuel des
+// étiquettes, cf. ensureRpsGollacSankeyLabelPositions), plutôt que la technique offscreen
+// Plotly.newPlot/Plotly.toImage ci-dessus — même principe que downloadRpsGollacSankeySnapshot
+// (bouton "Sauvegarder l'image en PNG"), qui existe pour cette même raison. scale 2 pour rester
+// cohérent avec la netteté des autres images du rapport (cf. createReportChartSnapshotDataUrl).
+async function createSankeyReportSnapshotDataUrl(gd, width, height) {
+  const svg = gd.querySelector("svg.main-svg");
+  if (!svg) {
+    throw new Error("Le graphique n'est pas disponible.");
+  }
+  const scale = 2;
+  const svgClone = svg.cloneNode(true);
+  svgClone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  svgClone.setAttribute("width", width);
+  svgClone.setAttribute("height", height);
+  const serialized = new XMLSerializer().serializeToString(svgClone);
+  const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(serialized)}`;
+  const image = await loadPlotExportImage(svgDataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/png");
+}
+
+// Capture chaque graphique Plotly actuellement visible en image PNG statique, sans toucher au DOM
+// affiché à l'écran (contrairement à l'ancien mécanisme d'impression) : le résultat, une Map
+// id-du-graphique → data URI, est utilisé par buildReportClone pour substituer une <img> à chaque
+// graphique dans la copie du contenu qui sera convertie en document Word.
+async function captureReportChartImages() {
+  const images = new Map();
+  if (typeof Plotly === "undefined") {
+    return images;
+  }
+  const maxDisplayWidth = document.body.classList.contains("landscape-report")
+    ? DOCX_CONTENT_WIDTH_PX.landscape
+    : DOCX_CONTENT_WIDTH_PX.portrait;
+  const nodes = Array.from(document.querySelectorAll(".js-plotly-plot"));
+  for (const gd of nodes) {
+    if (!gd.id || !(gd.offsetWidth > 0 && gd.offsetHeight > 0)) {
+      continue;
+    }
+    const rect = gd.getBoundingClientRect();
+    // Capturé à la taille RÉELLEMENT affichée à l'écran (pas resserré à la largeur du document) :
+    // resserrer le graphique dans un cadre bien plus étroit avant capture laissait les marges, la
+    // taille de police et la taille des marqueurs (toutes en pixels absolus) occuper une part bien
+    // plus grande du cadre qu'à l'écran, et changeait le cadrage/zoom apparent des scatter3d — capturer
+    // à la taille écran garantit un rendu fidèle au zoom par défaut et aux proportions de l'écran.
+    const captureWidth = Math.max(1, Math.round(rect.width));
+    const captureHeight = Math.max(1, Math.round(rect.height));
+    // Taille d'AFFICHAGE dans le document Word, indépendante de la résolution capturée ci-dessus :
+    // plafonnée à la largeur utile de la page (portrait/paysage), hauteur recalculée pour conserver
+    // le même ratio que la capture (donc que l'écran) — cf. generateReportDocx, qui fixe les
+    // attributs largeur/hauteur HTML de l'<img> sur ces valeurs plutôt que sur la résolution réelle
+    // du PNG (cf. pitfall documenté : sans cela, Word ignore le CSS width:100% et affiche l'image à
+    // sa taille intrinsèque en pixels interprétée à 96dpi, ici le double de la taille voulue).
+    const displayWidth = Math.min(maxDisplayWidth, captureWidth);
+    const displayHeight = Math.round(displayWidth * (captureHeight / captureWidth));
+    try {
+      // Les 4 Sankey "Rapprochement RPS" repositionnent leurs étiquettes de nœud en DOM après coup
+      // (cf. ensureRpsGollacSankeyLabelPositions, appliquée via container._rpsGollacSankeyNodeColumnByIndex) :
+      // comme pour le bouton "Sauvegarder l'image en PNG" (cf. downloadRpsGollacSankeySnapshot),
+      // Plotly.toImage/Plotly.newPlot régénèrent l'image à partir de la config figure/layout
+      // d'origine et ignorent ce repositionnement manuel, quel que soit le conteneur (même hors-écran
+      // avec le repositionnement réappliqué) — il faut donc capturer le <svg> littéralement affiché à
+      // l'écran (déjà repositionné) plutôt que de laisser Plotly le regénérer.
+      const dataUrl = gd._rpsGollacSankeyNodeColumnByIndex
+        ? await createSankeyReportSnapshotDataUrl(gd, captureWidth, captureHeight)
+        : await createReportChartSnapshotDataUrl(gd, captureWidth, captureHeight);
+      images.set(gd.id, { dataUrl, displayWidth, displayHeight });
+    } catch (error) {
+      console.error("Échec de la capture d'un graphique pour le rapport Word.", error);
+    }
+  }
+  return images;
+}
+
+// Construit une copie du contenu de résultats actuellement affiché, prête à être sérialisée en
+// HTML pour l'export Word : les couleurs de fond/texte réellement appliquées (pastilles de score,
+// lignes zébrées, en-têtes colorés) sont recopiées en style inline depuis les éléments d'origine
+// (une feuille de style externe n'étant pas garantie d'être respectée par le moteur de conversion
+// HTML → DOCX), les éléments masqués à l'écran (display:none, ex. graphique inutilisé pour ce
+// scénario) sont retirés plutôt que conservés avec un style qui pourrait ne pas être honoré, et les
+// boutons/sélecteurs de fichiers ainsi que le titre/l'introduction déjà répétés par l'en-tête du
+// rapport (cf. buildReportHtmlDocument) sont supprimés.
+// Word (altchunk) n'honore pas la notation CSS `rgba(...)` sur un background-color (contrairement
+// à `rgb(...)`/hex) : une couleur semi-transparente (ex. les cellules Échelle du tableau COPSOQ,
+// #56B4E926) se retrouvait donc silencieusement ignorée dans le rapport. On la remplace par
+// l'équivalent opaque obtenu en la fondant sur un fond blanc (celui de la page), visuellement
+// identique à ce qui est affiché à l'écran.
+function blendRgbaOverWhite(colorString) {
+  const match = /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/.exec(colorString);
+  if (!match) {
+    return colorString;
+  }
+  const alpha = parseFloat(match[4]);
+  if (alpha >= 1) {
+    return `rgb(${match[1]}, ${match[2]}, ${match[3]})`;
+  }
+  const blend = (channel) => Math.round(channel * alpha + 255 * (1 - alpha));
+  return `rgb(${blend(Number(match[1]))}, ${blend(Number(match[2]))}, ${blend(Number(match[3]))})`;
+}
+function buildReportClone(originalRoot) {
+  const clone = originalRoot.cloneNode(true);
+  const originals = originalRoot.querySelectorAll("*");
+  const clones = clone.querySelectorAll("*");
+  const hiddenClones = [];
+  originals.forEach((originalEl, index) => {
+    const cloneEl = clones[index];
+    if (!cloneEl) {
+      return;
+    }
+    const computed = getComputedStyle(originalEl);
+    if (computed.display === "none") {
+      hiddenClones.push(cloneEl);
+      return;
+    }
+    if (computed.backgroundColor && !/^rgba?\(0,\s*0,\s*0,\s*0\)$/.test(computed.backgroundColor)) {
+      cloneEl.style.backgroundColor = blendRgbaOverWhite(computed.backgroundColor);
+    }
+    cloneEl.style.color = computed.color;
+    if (originalEl.tagName === "TD" || originalEl.tagName === "TH") {
+      cloneEl.style.border = "1px solid #cccccc";
+      cloneEl.style.padding = "6px 8px";
+      cloneEl.style.textAlign = computed.textAlign;
+      cloneEl.style.fontWeight = computed.fontWeight;
+      cloneEl.style.verticalAlign = "middle";
+    }
+    if (originalEl.tagName === "TABLE") {
+      cloneEl.style.borderCollapse = "collapse";
+      cloneEl.style.width = "100%";
+    }
+    if (originalEl.tagName === "UL" || originalEl.tagName === "OL" || originalEl.tagName === "LI") {
+      // Sans ça, Word retombe sur sa propre puce par défaut dès que list-style:none (très
+      // répandu sur les listes de fichiers chargés de cette app) n'est pas explicitement recopié.
+      cloneEl.style.listStyleType = computed.listStyleType;
+      cloneEl.style.listStyle = computed.listStyle;
+    }
+  });
+  hiddenClones.forEach((el) => el.remove());
+  clone
+    .querySelectorAll("button, input, .modebar, .results-report-title, .rps-intro-note")
+    .forEach((el) => el.remove());
+  return clone;
+}
+
+// À l'écran, chaque compte de la colonne "Répartition" est un disque plein coloré contenant le
+// nombre (cf. createCopsoqRepartitionBullet) — compact et lisible sur une page web. Mais Word
+// n'honore ni border-radius (le disque devient un carré) ni l'espacement flex `gap` entre pastilles
+// voisines (les nombres se retrouvent collés, illisibles) une fois converti en document Word : on
+// remplace donc chaque disque, UNIQUEMENT dans le clone destiné à l'export (jamais à l'écran), par
+// une petite pastille "⬤" colorée suivie du nombre en texte normal, séparés par un vrai caractère
+// espace — un espace textuel, contrairement à `gap`, survit toujours à la conversion HTML → DOCX.
+function convertRepartitionBulletsForReport(clone) {
+  clone.querySelectorAll(".copsoq-repartition-wrap").forEach((wrap) => {
+    Array.from(wrap.querySelectorAll(".copsoq-repartition-bullet")).forEach((bullet, index) => {
+      const color = bullet.style.backgroundColor;
+      const count = bullet.textContent;
+      if (index > 0) {
+        wrap.insertBefore(document.createTextNode(" "), bullet);
+      }
+      const dot = document.createElement("span");
+      dot.style.color = color;
+      dot.textContent = RPS_BULLET_GLYPH;
+      const fragment = document.createDocumentFragment();
+      fragment.append(dot, document.createTextNode(`\u00A0${count}`));
+      bullet.replaceWith(fragment);
+    });
+  });
+}
+
+// Assemble le document HTML complet (DOCTYPE + html + head/style + body) attendu par
+// htmlDocx.asBlob (cf. generateReportDocx) : le titre du rapport et l'horodatage bilingue tiennent
+// lieu d'en-tête (remplaçant le titre de la vue et l'introduction, retirés par buildReportClone),
+// suivis du contenu de résultats (tableaux, graphiques convertis en images, etc.).
+function buildReportHtmlDocument(reportTitle, bodyInnerHtml) {
+  const [frLine, enLine] = getBilingualReportDateTimeLines();
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: Calibri, Arial, sans-serif; color: #1f2937; }
+  h1 { font-size: 20pt; margin: 0 0 4px; }
+  h2, h3, h4 { margin: 16px 0 8px; }
+  p { margin: 4px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+</style>
+</head>
+<body>
+<h1>${escapeHtmlText(reportTitle)}</h1>
+<p>${escapeHtmlText(frLine)}</p>
+<p>${escapeHtmlText(enLine)}</p>
+<hr>
+${bodyInnerHtml}
+</body>
+</html>`;
+}
+
+// Génère et télécharge un document Microsoft Word (.docx) reproduisant fidèlement (WYSIWYG) la
+// vue de résultats actuellement affichée à l'écran, quel que soit le questionnaire/scénario :
+// remplace entièrement l'ancien mécanisme d'impression/export PDF (window.print()). S'appuie sur
+// html-docx-js (cf. index.html), qui convertit un document HTML complet en .docx via la fonction
+// "altchunk" de Word — uniquement compatible avec Microsoft Word (pas LibreOffice/Google Docs).
+// html-docx-js (0.3.1) hardcodes the page size to US Letter (12240x15840 twips) — its
+// `asBlob(html, options)` only reads `orientation`/`margins` from `options`, the width/height
+// passed to its internal document template are fixed per-orientation with no override hook (confirmed
+// by inspecting the bundled/browserified source: no `width`/`height` option is ever read). Since we
+// can't reach into that closure, patch the already-generated .docx afterwards instead: unzip it (via
+// JSZip, loaded alongside html-docx-js in index.html — html-docx-js bundles its own JSZip internally,
+// but doesn't expose it globally, hence the separate dependency), rewrite word/document.xml's
+// <w:pgSz> to the standard OOXML A4 twip values (11906x16838 portrait, swapped for landscape — same
+// values Word itself writes for A4), and re-zip.
+async function setDocxPageSizeToA4(blob, isLandscape) {
+  if (typeof JSZip === "undefined") {
+    return blob;
+  }
+  const zip = await JSZip.loadAsync(blob);
+  const documentXmlFile = zip.file("word/document.xml");
+  if (!documentXmlFile) {
+    return blob;
+  }
+  const documentXml = await documentXmlFile.async("string");
+  const [a4Width, a4Height] = isLandscape ? [16838, 11906] : [11906, 16838];
+  const patchedXml = documentXml.replace(
+    /<w:pgSz\s+w:w="\d+"\s+w:h="\d+"/,
+    `<w:pgSz w:w="${a4Width}" w:h="${a4Height}"`,
+  );
+  zip.file("word/document.xml", patchedXml);
+  return zip.generateAsync({
+    type: "blob",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+}
+
+async function generateReportDocx(reportTitle, sourceTimestamp = null) {
+  if (typeof htmlDocx === "undefined") {
+    alert(
+      "La génération du rapport Word n'est pas disponible : la bibliothèque html-docx-js n'a pas pu être chargée (vérifiez la connexion réseau).",
+    );
+    return;
+  }
+  if (!contentRoot) {
+    return;
+  }
+  const chartImages = await captureReportChartImages();
+  const clone = buildReportClone(contentRoot);
+  convertRepartitionBulletsForReport(clone);
+  convertKarasekLineSwatchesForReport(clone);
+  clone.querySelectorAll(".js-plotly-plot").forEach((plotEl) => {
+    const image = chartImages.get(plotEl.id);
+    if (!image) {
+      plotEl.remove();
+      return;
+    }
+    const img = document.createElement("img");
+    img.src = image.dataUrl;
+    img.alt = "";
+    // Attributs HTML largeur/hauteur (pas seulement du CSS) : Word (altchunk) ignore le CSS
+    // width:100% sur une image et retombe sur sa taille intrinsèque en pixels interprétée à 96dpi —
+    // sans ces attributs, l'image capturée (haute résolution, cf. captureReportChartImages)
+    // s'affichait 2x trop grande dans le document final.
+    img.width = image.displayWidth;
+    img.height = image.displayHeight;
+    img.style.display = "block";
+    img.style.width = `${image.displayWidth}px`;
+    img.style.height = `${image.displayHeight}px`;
+    img.style.maxWidth = "100%";
+    img.style.margin = "12px auto";
+    plotEl.replaceWith(img);
+  });
+  const isLandscape = document.body.classList.contains("landscape-report");
+  const html = buildReportHtmlDocument(reportTitle, clone.innerHTML);
+  let blob;
+  try {
+    blob = htmlDocx.asBlob(html, {
+      orientation: isLandscape ? "landscape" : "portrait",
+      margins: { top: 567, right: 567, bottom: 567, left: 567 },
+    });
+    blob = await setDocxPageSizeToA4(blob, isLandscape);
+  } catch (error) {
+    console.error("Échec de la génération du rapport Word.", error);
+    alert("La génération du rapport Word a échoué.");
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${slugify(reportTitle)}-${sourceTimestamp || Date.now()}.docx`;
+  document.body.append(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+// Bouton "Générer un rapport" à ajouter dans chaque vue de résultats (cf. generateReportDocx) ;
+// reuse la même classe .secondary-btn que les autres actions. `compact` aligne la taille sur les
+// autres boutons compacts (.compact-action-btn) des vues Karasek-Siegrist/COPSOQ ; les 3 vues
+// "Rapprochement RPS" passent `compact: false` pour égaler la taille de leurs boutons de
+// chargement de fichiers (.secondary-btn seul, sans .compact-action-btn).
+function createGenerateReportButton(getReportTitle, { compact = true, timestamp = null } = {}) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = compact ? "secondary-btn compact-action-btn report-btn" : "secondary-btn report-btn";
+  button.textContent = "Générer un rapport (Word)";
+  button.addEventListener("click", () => {
+    generateReportDocx(typeof getReportTitle === "function" ? getReportTitle() : getReportTitle, timestamp);
+  });
+  return button;
+}
+
 function computeKarasekOrderedFromAnswerMap(answerByQuestion) {
   return karasekQuestionnaireItems.map((entry) => {
     const choiceIndex = answerByQuestion.get(entry.item);
@@ -1209,6 +1741,20 @@ function computeKarasekCategoryScores(ordered) {
     return acc;
   }, {});
 }
+// Bouton "croix" ajouté après le nom du fichier dans le titre du questionnaire révélé au clic sur
+// un point (individus/groupes) : masque le panneau sans attendre un nouveau clic sur le point.
+function buildKarasekQuestionnaireCloseButton(onClose) {
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "karasek-selected-summary-close";
+  closeBtn.setAttribute("aria-label", "Masquer le questionnaire");
+  closeBtn.textContent = "\u2715";
+  closeBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    onClose();
+  });
+  return closeBtn;
+}
 function buildKarasekQuestionnaireTable(ordered, categoryScores) {
   const tableWrap = document.createElement("div");
   tableWrap.className = "results-table-wrap";
@@ -1217,6 +1763,7 @@ function buildKarasekQuestionnaireTable(ordered, categoryScores) {
   table.innerHTML = "<tbody></tbody>";
   const tbody = table.querySelector("tbody");
   let previousCategory = "";
+  let itemRowIndex = 0;
   ordered.forEach((rowData) => {
     if (rowData.category !== previousCategory) {
       const categoryRow = document.createElement("tr");
@@ -1232,12 +1779,18 @@ function buildKarasekQuestionnaireTable(ordered, categoryScores) {
       categoryRow.append(categoryCell);
       tbody.append(categoryRow);
       previousCategory = rowData.category;
+      itemRowIndex = 0;
     }
     const row = document.createElement("tr");
+    if (itemRowIndex % 2 === 1) {
+      row.classList.add("results-row-alt");
+    }
+    itemRowIndex += 1;
     const itemCell = document.createElement("td");
     const responseCell = document.createElement("td");
+    itemCell.className = "karasek-item-cell";
     itemCell.textContent = rowData.item;
-    responseCell.className = "check-cell";
+    responseCell.className = "karasek-response-cell";
     const selectedLabel =
       rowData.selectedChoiceIndex >= 0 && rowData.selectedChoiceIndex < karasekOptions.length
         ? karasekOptions[rowData.selectedChoiceIndex]
@@ -1258,7 +1811,8 @@ function buildKarasekZoneLegend() {
     const text = document.createElement("span");
     legendItem.className = "zone-legend-item";
     chip.className = "zone-legend-color";
-    chip.style.backgroundColor = color;
+    chip.style.color = color;
+    chip.textContent = RPS_BULLET_GLYPH;
     text.textContent = label;
     legendItem.append(chip, text);
     legend.append(legendItem);
@@ -1278,37 +1832,78 @@ function getKarasekExportLegendItems(lineItems = []) {
     ...Object.entries(karasekZoneColors).map(([label, color]) => ({ label, color })),
   ];
 }
-function getKarasekScaleColorForCategoryScore(category, score) {
+// Zone (parmi les 4 de karasekZoneColors) d'un score brut (0-36) pour une dimension donnée : le
+// sens est inversé pour "Niveau des Exigences" (un score élevé y est défavorable, contrairement
+// aux 3 autres dimensions) — cf. getKarasekScaleColorForCategoryScore (couleur) et
+// buildKarasekRepartitionCell (comptage par zone) qui réutilisent cette même logique.
+function getKarasekZoneNameForCategoryScore(category, score) {
   const numericScore = Number(score);
   if (!Number.isFinite(numericScore)) {
-    return "#ffffff";
+    return null;
   }
-
   const isExigences = category === "Niveau des Exigences";
   if (isExigences) {
-    if (numericScore <= 9) {
-      return karasekZoneColors["Travail protecteur pour la santé"];
-    }
-    if (numericScore <= 18) {
-      return karasekZoneColors["Zone d'attention"];
-    }
-    if (numericScore <= 27) {
-      return karasekZoneColors["Zone d'alerte"];
-    }
-    return karasekZoneColors["Travail dangereux pour la santé"];
+    if (numericScore <= 9) return "Travail protecteur pour la santé";
+    if (numericScore <= 18) return "Zone d'attention";
+    if (numericScore <= 27) return "Zone d'alerte";
+    return "Travail dangereux pour la santé";
   }
-
-  if (numericScore <= 9) {
-    return karasekZoneColors["Travail dangereux pour la santé"];
-  }
-  if (numericScore <= 18) {
-    return karasekZoneColors["Zone d'alerte"];
-  }
-  if (numericScore <= 27) {
-    return karasekZoneColors["Zone d'attention"];
-  }
-  return karasekZoneColors["Travail protecteur pour la santé"];
+  if (numericScore <= 9) return "Travail dangereux pour la santé";
+  if (numericScore <= 18) return "Zone d'alerte";
+  if (numericScore <= 27) return "Zone d'attention";
+  return "Travail protecteur pour la santé";
 }
+function getKarasekScaleColorForCategoryScore(category, score) {
+  const zoneName = getKarasekZoneNameForCategoryScore(category, score);
+  return zoneName ? karasekZoneColors[zoneName] : "#ffffff";
+}
+// Ordre du pire au meilleur (rouge → vert, même convention que la colonne Répartition COPSOQ) pour
+// la colonne "Répartition" des tables de statistiques Karasek-Siegrist multi-individuelle/groupes.
+const karasekRepartitionZoneOrder = [
+  "Travail dangereux pour la santé",
+  "Zone d'alerte",
+  "Zone d'attention",
+  "Travail protecteur pour la santé",
+];
+function buildKarasekRepartitionCell(category, values) {
+  const wrap = document.createElement("div");
+  wrap.className = "copsoq-repartition-wrap";
+  karasekRepartitionZoneOrder.forEach((zoneName) => {
+    const count = values.filter((value) => getKarasekZoneNameForCategoryScore(category, value) === zoneName).length;
+    const color = karasekZoneColors[zoneName];
+    wrap.append(createCopsoqRepartitionBullet(count, color));
+  });
+  return wrap;
+}
+// Même rendu que buildKarasekRepartitionCell, mais à partir de zones déjà classifiées (cf.
+// individual.zones.soutien/reconnaissance, qui combinent 3 dimensions via classifyKarasekZone)
+// plutôt qu'à classifier depuis un score brut d'une seule dimension.
+function buildKarasekZoneCountsRepartitionCell(zoneNames) {
+  const wrap = document.createElement("div");
+  wrap.className = "copsoq-repartition-wrap";
+  karasekRepartitionZoneOrder.forEach((zoneName) => {
+    const count = zoneNames.filter((name) => name === zoneName).length;
+    const color = karasekZoneColors[zoneName];
+    wrap.append(createCopsoqRepartitionBullet(count, color));
+  });
+  return wrap;
+}
+// Lignes "Situation globale" ajoutées après les 4 dimensions dans les tables de statistiques
+// Karasek-Siegrist (multi-individuelle/groupes) : la Répartition provient de la classification
+// combinée (individual.zones.*, 3 facteurs), les autres statistiques du score brut de la dimension
+// correspondante (déjà utilisé pour la ligne "Dimension" de cette même valeur, juste au-dessus).
+const karasekGlobalSituations = [
+  {
+    label: "Situation globale / Soutien",
+    category: "Niveau de Soutien (collègues et manager)",
+    zoneKey: "soutien",
+  },
+  {
+    label: "Situation globale / Reconnaissance",
+    category: "Reconnaissance au travail",
+    zoneKey: "reconnaissance",
+  },
+];
 function formatStat(values, stat) {
   const result = getStatisticValue(values, stat);
   return Number.isInteger(result) ? String(result) : result.toFixed(1);
@@ -1342,14 +1937,14 @@ function renderKarasekSingleResultView(ordered, subtitleText, showSaveButton = f
   const categoryScores = computeKarasekCategoryScores(ordered);
   contentRoot.innerHTML = "";
   const resultsTitle = document.createElement("h2");
-  resultsTitle.className = "content-title";
+  resultsTitle.className = "content-title results-report-title";
   resultsTitle.textContent = "Résultats du questionnaire Karasek-Siegrist";
   const resultsSubtitle = document.createElement("p");
   resultsSubtitle.className = "content-subtitle";
   if (importedFileName) {
     resultsSubtitle.classList.add("karasek-import-subtitle");
     const prefix = document.createElement("span");
-    prefix.textContent = "Import individuel:";
+    prefix.textContent = "Import individuel : ";
     const fileName = document.createElement("span");
     fileName.textContent = importedFileName;
     const suffix = document.createElement("span");
@@ -1360,7 +1955,6 @@ function renderKarasekSingleResultView(ordered, subtitleText, showSaveButton = f
   }
   const resultsLayout = document.createElement("div");
   resultsLayout.className = "results-layout";
-  resultsLayout.style.gridTemplateColumns = "minmax(320px, 0.9fr) minmax(0, 1.1fr)";
   const tableWrap = buildKarasekQuestionnaireTable(ordered, categoryScores);
   const plotPanel = document.createElement("section");
   plotPanel.className = "plot-panel";
@@ -1369,7 +1963,7 @@ function renderKarasekSingleResultView(ordered, subtitleText, showSaveButton = f
   plotArea.className = "plot-area";
   applyKarasekPlotContainerSize(plotArea);
   plotPanel.append(wrapKarasekPlotWithLegend(plotArea));
-  resultsLayout.append(tableWrap, plotPanel);
+  resultsLayout.append(plotPanel, tableWrap);
   const titleRow = document.createElement("div");
   titleRow.className = "content-title-row";
   titleRow.append(resultsTitle);
@@ -1397,8 +1991,15 @@ function renderKarasekSingleResultView(ordered, subtitleText, showSaveButton = f
     });
     titleRow.append(saveBtn);
   }
+  titleRow.append(
+    createGenerateReportButton("Résultats du questionnaire Karasek-Siegrist", {
+      timestamp: importedFileName ? getFileNameTimestamp(importedFileName) : null,
+    }),
+  );
   contentRoot.append(titleRow, resultsSubtitle, resultsLayout);
-  renderKarasek3dPlot("karasek-3d-plot", categoryScores);
+  renderKarasek3dPlot("karasek-3d-plot", categoryScores, {
+    timestamp: importedFileName ? getFileNameTimestamp(importedFileName) : null,
+  });
   scrollToPageTop();
 }
 function getKarasekDefaultCamera() {
@@ -1409,39 +2010,27 @@ function getKarasekDefaultCamera() {
   };
 }
 function getKarasekIndividualLineColor(index) {
-  return plotLineColors[index % plotLineColors.length];
+  return karasekScatter3dLineColors[index % karasekScatter3dLineColors.length];
 }
 function buildKarasekIndividualLineSwatch(index) {
-  const swatch = document.createElement("span");
-  swatch.className = "karasek-individual-line-swatch";
-  swatch.style.backgroundColor = getKarasekIndividualLineColor(index);
-  swatch.setAttribute("aria-hidden", "true");
-  return swatch;
+  return buildKarasekLineDashSwatch(
+    "karasek-individual-line-swatch",
+    getKarasekIndividualLineColor(index),
+    getKarasekScatter3dLineDash(index),
+  );
 }
 function getKarasekGroupLineColor(index) {
-  return plotLineColors[index % plotLineColors.length];
+  // Même palette/formule que getKarasekIndividualLineColor : conservée comme fonction distincte
+  // pour la clarté sémantique des appels (vue individus vs vue groupes/lots), pas pour une
+  // différence de logique.
+  return getKarasekIndividualLineColor(index);
 }
 function buildKarasekGroupLineSwatch(index) {
-  const swatch = document.createElement("span");
-  swatch.className = "karasek-group-line-swatch";
-  swatch.style.backgroundColor = getKarasekGroupLineColor(index);
-  swatch.setAttribute("aria-hidden", "true");
-  return swatch;
-}
-function buildKarasekZoneCountBullet(zoneName, count) {
-  const bullet = document.createElement("span");
-  bullet.className = "karasek-zone-count-bullet";
-  const bulletColor = count > 0 ? karasekZoneColors[zoneName] : "#d9e4ea";
-  bullet.style.backgroundColor = bulletColor;
-  bullet.style.color = getContrastTextColor(bulletColor);
-  bullet.textContent = count;
-  bullet.setAttribute("aria-label", `${count} individu${count === 1 ? "" : "s"}`);
-  return bullet;
-}
-function styleKarasekZoneCell(cell, zoneName) {
-  const zoneColor = karasekZoneColors[zoneName];
-  cell.style.backgroundColor = zoneColor;
-  cell.style.color = getContrastTextColor(zoneColor);
+  return buildKarasekLineDashSwatch(
+    "karasek-group-line-swatch",
+    getKarasekGroupLineColor(index),
+    getKarasekScatter3dLineDash(index),
+  );
 }
 function renderKarasekIndividualsView(individuals) {
   if (!contentRoot || !individuals.length || typeof Plotly === "undefined") {
@@ -1450,7 +2039,7 @@ function renderKarasekIndividualsView(individuals) {
   contentRoot.hidden = false;
   contentRoot.innerHTML = "";
   const title = document.createElement("h2");
-  title.className = "content-title";
+  title.className = "content-title results-report-title";
   title.textContent = "Résultats Karasek-Siegrist multi-individuels";
   const subtitle = document.createElement("p");
   subtitle.className = "content-subtitle";
@@ -1473,59 +2062,59 @@ function renderKarasekIndividualsView(individuals) {
   });
   const titleRow = document.createElement("div");
   titleRow.className = "content-title-row";
-  titleRow.append(title, addIndividualsBtn, resetIndividualsBtn);
+  titleRow.append(title, addIndividualsBtn, resetIndividualsBtn, createGenerateReportButton("Résultats Karasek-Siegrist multi-individuels"));
   const layout = document.createElement("div");
   layout.className = "results-layout";
-  layout.style.gridTemplateColumns = "minmax(320px, 0.9fr) minmax(0, 1.1fr)";
   const leftPanel = document.createElement("div");
   leftPanel.className = "results-table-wrap";
   const statsTable = document.createElement("table");
   statsTable.className = "results-table";
-  statsTable.style.width = "auto";
-  statsTable.innerHTML = "<thead><tr><th>Dimension</th><th class=\"text-center\">Moyenne</th><th class=\"text-center\">Médiane</th><th class=\"text-center\">Min</th><th class=\"text-center\">Max</th></tr></thead><tbody></tbody>";
+  statsTable.innerHTML = "<thead><tr><th>Dimension</th><th class=\"text-center\">Répartition</th><th class=\"text-center\">Moyenne</th><th class=\"text-center\">Médiane</th><th class=\"text-center\">Minimum</th><th class=\"text-center\">Maximum</th></tr></thead><tbody></tbody>";
   const tbody = statsTable.querySelector("tbody");
   karasekCategoryOrder.forEach((category) => {
     const values = individuals.map((individual) => individual.scores[category] || 0);
     const row = document.createElement("tr");
     const dimensionLabel = karasekDimensionDisplayNames[category] || category;
-    row.innerHTML = `<td>${dimensionLabel}</td><td>${formatStat(values, "mean")}</td><td>${formatStat(values, "median")}</td><td>${formatStat(values, "min")}</td><td>${formatStat(values, "max")}</td>`;
+    row.innerHTML = `<td>${dimensionLabel}</td><td></td><td>${formatStat(values, "mean")}</td><td>${formatStat(values, "median")}</td><td>${formatStat(values, "min")}</td><td>${formatStat(values, "max")}</td>`;
     const cells = row.querySelectorAll("td");
     cells[0].style.fontWeight = "600";
-    for (let index = 1; index < cells.length; index += 1) {
+    cells[1].className = "copsoq-repartition-cell";
+    cells[1].append(buildKarasekRepartitionCell(category, values));
+    for (let index = 2; index < cells.length; index += 1) {
       const cell = cells[index];
       const bgColor = getKarasekScaleColorForCategoryScore(category, cell.textContent);
       const bullet = document.createElement("span");
       bullet.className = "karasek-stat-bullet";
-      bullet.style.backgroundColor = bgColor;
+      bullet.style.color = bgColor;
       bullet.setAttribute("aria-hidden", "true");
+      bullet.textContent = RPS_BULLET_GLYPH;
       cell.classList.add("karasek-stat-bullet-cell");
       cell.textContent = "";
       cell.append(bullet);
     }
     tbody.append(row);
   });
-  const zonesTable = document.createElement("table");
-  zonesTable.className = "results-table";
-  zonesTable.style.marginTop = "12px";
-  zonesTable.style.width = "auto";
-  zonesTable.innerHTML = "<thead><tr><th>Zone</th><th class=\"text-center\">Soutien</th><th class=\"text-center\">Reconnaissance</th></tr></thead><tbody></tbody>";
-  const zoneBody = zonesTable.querySelector("tbody");
-  const zoneNames = Object.keys(karasekZoneColors);
-  zoneNames.forEach((zoneName) => {
-    const soutienCount = individuals.filter((individual) => individual.zones.soutien === zoneName).length;
-    const reconnaissanceCount = individuals.filter(
-      (individual) => individual.zones.reconnaissance === zoneName,
-    ).length;
+  karasekGlobalSituations.forEach(({ label, category, zoneKey }) => {
+    const values = individuals.map((individual) => individual.scores[category] || 0);
     const row = document.createElement("tr");
-    row.innerHTML = `<td>${zoneName}</td><td></td><td></td>`;
+    row.className = "karasek-global-situation-row";
+    row.innerHTML = `<td>${label}</td><td></td><td>${formatStat(values, "mean")}</td><td>${formatStat(values, "median")}</td><td>${formatStat(values, "min")}</td><td>${formatStat(values, "max")}</td>`;
     const cells = row.querySelectorAll("td");
-    cells[0].style.fontWeight = "600";
-    styleKarasekZoneCell(cells[0], zoneName);
-    cells[1].className = "karasek-stat-bullet-cell";
-    cells[1].append(buildKarasekZoneCountBullet(zoneName, soutienCount));
-    cells[2].className = "karasek-stat-bullet-cell";
-    cells[2].append(buildKarasekZoneCountBullet(zoneName, reconnaissanceCount));
-    zoneBody.append(row);
+    cells[1].className = "copsoq-repartition-cell";
+    cells[1].append(buildKarasekZoneCountsRepartitionCell(individuals.map((individual) => individual.zones[zoneKey])));
+    for (let index = 2; index < cells.length; index += 1) {
+      const cell = cells[index];
+      const bgColor = getKarasekScaleColorForCategoryScore(category, cell.textContent);
+      const bullet = document.createElement("span");
+      bullet.className = "karasek-stat-bullet";
+      bullet.style.color = bgColor;
+      bullet.setAttribute("aria-hidden", "true");
+      bullet.textContent = RPS_BULLET_GLYPH;
+      cell.classList.add("karasek-stat-bullet-cell");
+      cell.textContent = "";
+      cell.append(bullet);
+    }
+    tbody.append(row);
   });
   const countText = document.createElement("p");
   countText.className = "content-subtitle";
@@ -1555,14 +2144,14 @@ function renderKarasekIndividualsView(individuals) {
   selectedSummaryTitle.className = "content-subtitle";
 
   const selectedSummaryContent = document.createElement("div");
-  selectedSummaryContent.style.overflowY = "auto";
+  selectedSummaryContent.className = "karasek-selected-summary-content";
   selectedSummaryContent.style.padding = "8px";
   selectedSummaryContent.style.border = "1px solid #d9d9d9";
   selectedSummaryContent.style.borderRadius = "8px";
   selectedSummaryContent.style.background = "#ffffff";
 
   selectedSummaryWrap.append(selectedSummaryTitle, selectedSummaryContent);
-  leftPanel.append(countText, statsTable, zonesTable, selectedSummaryWrap);
+  leftPanel.append(countText, statsTable);
   const rightPanel = document.createElement("section");
   rightPanel.className = "plot-panel";
   const plotArea = document.createElement("div");
@@ -1571,7 +2160,7 @@ function renderKarasekIndividualsView(individuals) {
   applyKarasekPlotContainerSize(plotArea);
   rightPanel.append(wrapKarasekPlotWithLegend(plotArea));
   layout.append(leftPanel, rightPanel);
-  contentRoot.append(titleRow, subtitle, layout, filesSection);
+  contentRoot.append(titleRow, subtitle, layout, selectedSummaryWrap, filesSection);
   const soutienTrace = {
     type: "scatter3d",
     mode: "markers",
@@ -1587,7 +2176,7 @@ function renderKarasekIndividualsView(individuals) {
       symbol: "circle",
       line: { color: "#ffffff", width: 1 },
     },
-    hovertemplate: "%{text}<br>Exigences: %{x}<br>Autonomie: %{y}<br>Soutien: %{z}<br>Cliquer sur le point pour afficher le questionnaire associé.<extra></extra>",
+    hovertemplate: "%{text}<br>Exigences: %{x}<br>Autonomie: %{y}<br>Soutien: %{z}<br>Cliquer sur le point pour afficher/masquer le questionnaire associé.<extra></extra>",
   };
   const reconnaissanceTrace = {
     type: "scatter3d",
@@ -1604,7 +2193,7 @@ function renderKarasekIndividualsView(individuals) {
       symbol: "diamond",
       line: { color: "#ffffff", width: 1 },
     },
-    hovertemplate: "%{text}<br>Exigences: %{x}<br>Autonomie: %{y}<br>Reconnaissance: %{z}<br>Cliquer sur le point pour afficher le questionnaire associé.<extra></extra>",
+    hovertemplate: "%{text}<br>Exigences: %{x}<br>Autonomie: %{y}<br>Reconnaissance: %{z}<br>Cliquer sur le point pour afficher/masquer le questionnaire associé.<extra></extra>",
   };
   const linkTraces = [];
   individuals.forEach((individual, index) => {
@@ -1634,6 +2223,7 @@ function renderKarasekIndividualsView(individuals) {
       z: [soutien, reconnaissance],
       line: {
         color: getKarasekIndividualLineColor(index),
+        dash: getKarasekScatter3dLineDash(index),
         width: 4,
       },
     });
@@ -1660,16 +2250,16 @@ function renderKarasekIndividualsView(individuals) {
     plotLayout,
     getKarasekPlotConfig(plotArea, "karasek-individuels", {
       title: "Karasek-Siegrist : analyse d'un groupe d'individus",
-      lineItems: individuals.map((individual, index) => ({
-        label: individual.fileName,
-        color: getKarasekIndividualLineColor(index),
-        type: "line",
-      })),
     }),
   );
   requestAnimationFrame(() => {
     Plotly.Plots.resize(plotArea);
   });
+  let selectedIndividualIndex = null;
+  const hideSelectedIndividualSummary = () => {
+    selectedSummaryWrap.style.display = "none";
+    selectedIndividualIndex = null;
+  };
   plotArea.on("plotly_click", (event) => {
     const point = event && event.points && event.points[0];
     if (!point) {
@@ -1679,6 +2269,12 @@ function renderKarasekIndividualsView(individuals) {
     if (!Number.isInteger(index) || index < 0 || index >= individuals.length) {
       return;
     }
+    // Recliquer sur le point déjà sélectionné masque le questionnaire au lieu de le reconstruire.
+    if (selectedIndividualIndex === index && selectedSummaryWrap.style.display !== "none") {
+      hideSelectedIndividualSummary();
+      return;
+    }
+    selectedIndividualIndex = index;
     const individual = individuals[index];
     const titlePrefix = document.createElement("span");
     titlePrefix.textContent = "Questionnaire associé:";
@@ -1689,20 +2285,15 @@ function renderKarasekIndividualsView(individuals) {
       titlePrefix,
       buildKarasekIndividualLineSwatch(index),
       fileName,
+      buildKarasekQuestionnaireCloseButton(hideSelectedIndividualSummary),
     );
     selectedSummaryContent.innerHTML = "";
     selectedSummaryContent.append(buildKarasekQuestionnaireTable(individual.ordered, individual.scores));
     selectedSummaryWrap.style.display = "block";
-    // Statistiques + espace questionnaire doivent occuper une hauteur totale équivalente à celle du
-    // plot : on lit la hauteur du graphique lui-même (plotArea, non affecté par l'étirement de la
-    // grille CSS) plutôt que celle de rightPanel, qui elle peut être artificiellement étirée par la
-    // grille dès que ce bloc de questionnaire (encore sans hauteur imposée) rend leftPanel plus haut.
-    const plotHeight = plotArea.getBoundingClientRect().height;
-    const spaceBefore = selectedSummaryWrap.getBoundingClientRect().top - leftPanel.getBoundingClientRect().top;
-    const titleHeight = selectedSummaryTitle.getBoundingClientRect().height;
-    const contentHeight = Math.max(200, Math.round(plotHeight - spaceBefore - titleHeight - 12));
-    selectedSummaryContent.style.height = `${contentHeight}px`;
-    selectedSummaryContent.style.maxHeight = `${contentHeight}px`;
+    // Défile jusqu'au plot (et non jusqu'au questionnaire) : le plot reste ainsi entièrement
+    // visible en haut de page, le questionnaire qui le suit juste en dessous devient visible sans
+    // défilement excessif.
+    rightPanel.scrollIntoView({ behavior: "smooth", block: "start" });
   });
   scrollToPageTop();
 }
@@ -1716,7 +2307,7 @@ function renderKarasekGroupView(individuals) {
     : [{ label: "Lot 1", individuals }];
   contentRoot.innerHTML = "";
   const title = document.createElement("h2");
-  title.className = "content-title";
+  title.className = "content-title results-report-title";
   title.textContent = "Résultats Karasek-Siegrist de groupes";
   const subtitle = document.createElement("p");
   subtitle.className = "content-subtitle";
@@ -1738,10 +2329,9 @@ function renderKarasekGroupView(individuals) {
   });
   const titleRow = document.createElement("div");
   titleRow.className = "content-title-row";
-  titleRow.append(title, addGroupBtn, resetGroupBtn);
+  titleRow.append(title, addGroupBtn, resetGroupBtn, createGenerateReportButton("Résultats Karasek-Siegrist de groupes"));
   const layout = document.createElement("div");
   layout.className = "results-layout";
-  layout.style.gridTemplateColumns = "minmax(320px, max-content) minmax(280px, 1fr)";
   const leftPanel = document.createElement("div");
   leftPanel.className = "results-table-wrap";
 
@@ -1775,8 +2365,7 @@ function renderKarasekGroupView(individuals) {
 
   const statsTable = document.createElement("table");
   statsTable.className = "results-table karasek-group-statistics-table";
-  statsTable.style.width = "auto";
-  statsTable.innerHTML = "<thead><tr><th>Dimension</th><th class=\"text-center\">Lot</th><th class=\"text-center\">Moyenne</th><th class=\"text-center\">Médiane</th><th class=\"text-center\">Min</th><th class=\"text-center\">Max</th></tr></thead><tbody></tbody>";
+  statsTable.innerHTML = "<thead><tr><th>Dimension</th><th class=\"text-center\">Lot</th><th class=\"text-center\">Répartition</th><th class=\"text-center\">Moyenne</th><th class=\"text-center\">Médiane</th><th class=\"text-center\">Minimum</th><th class=\"text-center\">Maximum</th></tr></thead><tbody></tbody>";
   const statsBody = statsTable.querySelector("tbody");
   karasekCategoryOrder.forEach((category) => {
     groupBatches.forEach((batch, batchIndex) => {
@@ -1796,6 +2385,10 @@ function renderKarasekGroupView(individuals) {
       batchName.textContent = batch.label;
       batchCell.append(buildKarasekGroupLineSwatch(batchIndex), batchName);
       row.append(batchCell);
+      const repartitionCell = document.createElement("td");
+      repartitionCell.className = "copsoq-repartition-cell";
+      repartitionCell.append(buildKarasekRepartitionCell(category, values));
+      row.append(repartitionCell);
       ["mean", "median", "min", "max"].forEach((statisticName) => {
         const statistic = formatStat(values, statisticName);
         const statCell = document.createElement("td");
@@ -1804,37 +2397,26 @@ function renderKarasekGroupView(individuals) {
         statCell.title = statistic;
         const bullet = document.createElement("span");
         bullet.className = "karasek-stat-bullet";
-        bullet.style.backgroundColor = getKarasekScaleColorForCategoryScore(category, statistic);
+        bullet.style.color = getKarasekScaleColorForCategoryScore(category, statistic);
         bullet.setAttribute("aria-hidden", "true");
+        bullet.textContent = RPS_BULLET_GLYPH;
         statCell.append(bullet);
         row.append(statCell);
       });
       statsBody.append(row);
     });
   });
-  leftPanel.append(statsTable);
-
-  const zonesTable = document.createElement("table");
-  zonesTable.className = "results-table karasek-group-statistics-table";
-  zonesTable.style.marginTop = "12px";
-  zonesTable.style.width = "auto";
-  zonesTable.innerHTML = "<thead><tr><th>Zone</th><th class=\"text-center\">Lot</th><th class=\"text-center\">Soutien</th><th class=\"text-center\">Reconnaissance</th></tr></thead><tbody></tbody>";
-  const zoneBody = zonesTable.querySelector("tbody");
-  Object.keys(karasekZoneColors).forEach((zoneName) => {
+  karasekGlobalSituations.forEach(({ label, category, zoneKey }) => {
     groupBatches.forEach((batch, batchIndex) => {
       const batchIndividuals = batch.individuals || [];
-      const soutienCount = batchIndividuals.filter((individual) => individual.zones.soutien === zoneName).length;
-      const reconnaissanceCount = batchIndividuals.filter(
-        (individual) => individual.zones.reconnaissance === zoneName,
-      ).length;
+      const values = batchIndividuals.map((individual) => individual.scores[category] || 0);
       const row = document.createElement("tr");
+      row.className = "karasek-global-situation-row";
       if (batchIndex === 0) {
-        const zoneCell = document.createElement("td");
-        zoneCell.rowSpan = groupBatches.length;
-        zoneCell.className = "karasek-group-label-cell";
-        zoneCell.textContent = zoneName;
-        styleKarasekZoneCell(zoneCell, zoneName);
-        row.append(zoneCell);
+        const labelCell = document.createElement("td");
+        labelCell.rowSpan = groupBatches.length;
+        labelCell.textContent = label;
+        row.append(labelCell);
       }
       const batchCell = document.createElement("td");
       batchCell.className = "karasek-group-batch-cell";
@@ -1842,16 +2424,28 @@ function renderKarasekGroupView(individuals) {
       batchName.textContent = batch.label;
       batchCell.append(buildKarasekGroupLineSwatch(batchIndex), batchName);
       row.append(batchCell);
-      [soutienCount, reconnaissanceCount].forEach((count) => {
+      const repartitionCell = document.createElement("td");
+      repartitionCell.className = "copsoq-repartition-cell";
+      repartitionCell.append(buildKarasekZoneCountsRepartitionCell(batchIndividuals.map((individual) => individual.zones[zoneKey])));
+      row.append(repartitionCell);
+      ["mean", "median", "min", "max"].forEach((statisticName) => {
+        const statistic = formatStat(values, statisticName);
         const statCell = document.createElement("td");
         statCell.className = "karasek-stat-bullet-cell";
-        statCell.append(buildKarasekZoneCountBullet(zoneName, count));
+        statCell.setAttribute("aria-label", statistic);
+        statCell.title = statistic;
+        const bullet = document.createElement("span");
+        bullet.className = "karasek-stat-bullet";
+        bullet.style.color = getKarasekScaleColorForCategoryScore(category, statistic);
+        bullet.setAttribute("aria-hidden", "true");
+        bullet.textContent = RPS_BULLET_GLYPH;
+        statCell.append(bullet);
         row.append(statCell);
       });
-      zoneBody.append(row);
+      statsBody.append(row);
     });
   });
-  leftPanel.append(zonesTable);
+  leftPanel.append(statsTable);
   const rightPanel = document.createElement("section");
   rightPanel.className = "plot-panel";
   const plotArea = document.createElement("div");
@@ -1860,7 +2454,19 @@ function renderKarasekGroupView(individuals) {
   applyKarasekPlotContainerSize(plotArea);
   rightPanel.append(wrapKarasekPlotWithLegend(plotArea));
   layout.append(leftPanel, rightPanel);
-  contentRoot.append(titleRow, subtitle, layout, filesSection);
+  const selectedSummaryWrap = document.createElement("div");
+  selectedSummaryWrap.style.marginTop = "12px";
+  selectedSummaryWrap.style.display = "none";
+  const selectedSummaryTitle = document.createElement("p");
+  selectedSummaryTitle.className = "content-subtitle";
+  const selectedSummaryContent = document.createElement("div");
+  selectedSummaryContent.className = "karasek-selected-summary-content";
+  selectedSummaryContent.style.padding = "8px";
+  selectedSummaryContent.style.border = "1px solid #d9d9d9";
+  selectedSummaryContent.style.borderRadius = "8px";
+  selectedSummaryContent.style.background = "#ffffff";
+  selectedSummaryWrap.append(selectedSummaryTitle, selectedSummaryContent);
+  contentRoot.append(titleRow, subtitle, layout, selectedSummaryWrap, filesSection);
   const traces = [];
 
   groupBatches.forEach((batch, batchIndex) => {
@@ -1883,7 +2489,7 @@ function renderKarasekGroupView(individuals) {
         line: { color: "#ffffff", width: 1 },
       },
       hovertemplate:
-        "%{text}<br>Lot: %{customdata[0]}<br>Zone: %{customdata[1]}<br>Exigences: %{x}<br>Autonomie: %{y}<br>Soutien: %{z}<extra></extra>",
+        "%{text}<br>Lot: %{customdata[0]}<br>Zone: %{customdata[1]}<br>Exigences: %{x}<br>Autonomie: %{y}<br>Soutien: %{z}<br>Cliquer sur le point pour afficher/masquer le questionnaire associé.<extra></extra>",
     };
 
     const reconnaissanceTrace = {
@@ -1902,7 +2508,7 @@ function renderKarasekGroupView(individuals) {
         line: { color: "#ffffff", width: 1 },
       },
       hovertemplate:
-        "%{text}<br>Lot: %{customdata[0]}<br>Zone: %{customdata[1]}<br>Exigences: %{x}<br>Autonomie: %{y}<br>Reconnaissance: %{z}<extra></extra>",
+        "%{text}<br>Lot: %{customdata[0]}<br>Zone: %{customdata[1]}<br>Exigences: %{x}<br>Autonomie: %{y}<br>Reconnaissance: %{z}<br>Cliquer sur le point pour afficher/masquer le questionnaire associé.<extra></extra>",
     };
 
     const linkTrace = {
@@ -1915,11 +2521,12 @@ function renderKarasekGroupView(individuals) {
       z: [],
       line: {
         color: groupPointColor,
+        dash: getKarasekScatter3dLineDash(batchIndex),
         width: 4,
       },
     };
 
-    batchIndividuals.forEach((individual) => {
+    batchIndividuals.forEach((individual, individualIndex) => {
       const exigences = individual.scores["Niveau des Exigences"] || 0;
       const autonomie = individual.scores["Degré d'Autonomie et équilibre vie privée / vie professionnelle"] || 0;
       const soutien = individual.scores["Niveau de Soutien (collègues et manager)"] || 0;
@@ -1931,14 +2538,14 @@ function renderKarasekGroupView(individuals) {
       soutienTrace.y.push(autonomie);
       soutienTrace.z.push(soutien);
       soutienTrace.text.push(individual.fileName);
-      soutienTrace.customdata.push([batch.label, zoneSoutien]);
+      soutienTrace.customdata.push([batch.label, zoneSoutien, batchIndex, individualIndex]);
       soutienTrace.marker.color.push(karasekZoneColors[zoneSoutien]);
 
       reconnaissanceTrace.x.push(exigences);
       reconnaissanceTrace.y.push(autonomie);
       reconnaissanceTrace.z.push(reconnaissance);
       reconnaissanceTrace.text.push(individual.fileName);
-      reconnaissanceTrace.customdata.push([batch.label, zoneReconnaissance]);
+      reconnaissanceTrace.customdata.push([batch.label, zoneReconnaissance, batchIndex, individualIndex]);
       reconnaissanceTrace.marker.color.push(karasekZoneColors[zoneReconnaissance]);
 
       linkTrace.x.push(exigences, exigences, null);
@@ -1979,9 +2586,53 @@ function renderKarasekGroupView(individuals) {
   requestAnimationFrame(() => {
     Plotly.Plots.resize(plotArea);
   });
+  let selectedGroupPointKey = null;
+  const hideSelectedGroupSummary = () => {
+    selectedSummaryWrap.style.display = "none";
+    selectedGroupPointKey = null;
+  };
+  plotArea.on("plotly_click", (event) => {
+    const point = event && event.points && event.points[0];
+    const customdata = point && point.customdata;
+    if (!Array.isArray(customdata)) {
+      return;
+    }
+    const batchIndex = Number(customdata[2]);
+    const individualIndex = Number(customdata[3]);
+    const batch = groupBatches[batchIndex];
+    const individual = batch && batch.individuals && batch.individuals[individualIndex];
+    if (!individual) {
+      return;
+    }
+    const key = `${batchIndex}:${individualIndex}`;
+    // Recliquer sur le point déjà sélectionné masque le questionnaire au lieu de le reconstruire.
+    if (selectedGroupPointKey === key && selectedSummaryWrap.style.display !== "none") {
+      hideSelectedGroupSummary();
+      return;
+    }
+    selectedGroupPointKey = key;
+    const titlePrefix = document.createElement("span");
+    titlePrefix.textContent = "Questionnaire associé:";
+    const batchLabel = document.createElement("span");
+    batchLabel.textContent = `${batch.label} — `;
+    const fileName = document.createElement("span");
+    fileName.textContent = individual.fileName;
+    selectedSummaryTitle.classList.add("karasek-selected-summary-title");
+    selectedSummaryTitle.replaceChildren(
+      titlePrefix,
+      buildKarasekGroupLineSwatch(batchIndex),
+      batchLabel,
+      fileName,
+      buildKarasekQuestionnaireCloseButton(hideSelectedGroupSummary),
+    );
+    selectedSummaryContent.innerHTML = "";
+    selectedSummaryContent.append(buildKarasekQuestionnaireTable(individual.ordered, individual.scores));
+    selectedSummaryWrap.style.display = "block";
+    rightPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   scrollToPageTop();
 }
-function renderKarasek3dPlot(plotId, scores) {
+function renderKarasek3dPlot(plotId, scores, exportOptions = {}) {
   const plotContainer = document.getElementById(plotId);
   if (!plotContainer || typeof Plotly === "undefined") {
     return;
@@ -2003,6 +2654,7 @@ function renderKarasek3dPlot(plotId, scores) {
     z: [soutien, reconnaissance],
     line: {
       color: getKarasekIndividualLineColor(0),
+      dash: getKarasekScatter3dLineDash(0),
       width: 4,
     },
   };
@@ -2065,7 +2717,7 @@ function renderKarasek3dPlot(plotId, scores) {
     plotContainer,
     [linkTrace, traceSoutien, traceReconnaissance],
     layout,
-    getKarasekPlotConfig(plotContainer, "karasek-resultat"),
+    getKarasekPlotConfig(plotContainer, "karasek-resultat", exportOptions),
   );
   requestAnimationFrame(() => {
     Plotly.Plots.resize(plotContainer);
@@ -2082,7 +2734,9 @@ function applyKarasekPlotContainerSize(container) {
 }
 function getKarasekPlotConfig(container, filenamePrefix, exportOptions = {}) {
   ensureKarasekFullscreenBehavior(container);
+  const timestamp = exportOptions.timestamp || Date.now();
   return {
+    locale: "fr",
     responsive: true,
     sendDataToCloud: false,
     displaylogo: false,
@@ -2090,7 +2744,7 @@ function getKarasekPlotConfig(container, filenamePrefix, exportOptions = {}) {
     modeBarButtonsToRemove: ["resetCameraLastSave3d", "zoom3d", "toImage"],
     toImageButtonOptions: {
       format: "png",
-      filename: `${filenamePrefix}-${Date.now()}`,
+      filename: `${filenamePrefix}-${timestamp}`,
       scale: 1,
     },
     modeBarButtonsToAdd: [
@@ -2098,7 +2752,7 @@ function getKarasekPlotConfig(container, filenamePrefix, exportOptions = {}) {
         title: exportOptions.title || "Karasek-Siegrist",
         legendItems: getKarasekExportLegendItems(exportOptions.lineItems),
         legendPosition: "overlay-top-left",
-        filename: `${filenamePrefix}-${Date.now()}`,
+        filename: `${filenamePrefix}-${timestamp}`,
         width: 1600,
         height: 1600,
       }),
@@ -2116,6 +2770,13 @@ function getKarasekPlotConfig(container, filenamePrefix, exportOptions = {}) {
           }
           const fullscreenTarget = container.closest(".karasek-plot-fullscreen-wrap") || container;
           if (!document.fullscreenElement) {
+            // Mesuré AVANT de passer en plein écran : sert de référence exacte à restaurer à la
+            // sortie (cf. ensureKarasekFullscreenBehavior) plutôt que de re-mesurer le conteneur
+            // après la sortie, ce qui capturait encore sa taille plein écran (transition non
+            // terminée) et faisait grandir le graphique un peu plus à chaque cycle entrée/sortie.
+            const bounds = container.getBoundingClientRect();
+            container.dataset.karasekOriginalWidth = String(Math.round(bounds.width));
+            container.dataset.karasekOriginalHeight = String(Math.round(bounds.height));
             fullscreenTarget.dataset.karasekPrevBackground = fullscreenTarget.style.backgroundColor || "";
             fullscreenTarget.style.backgroundColor = "#ffffff";
             fullscreenTarget.requestFullscreen();
@@ -2150,9 +2811,19 @@ function ensureKarasekFullscreenBehavior(container) {
       if (!container.isConnected || typeof Plotly === "undefined" || typeof Plotly.relayout !== "function") {
         return;
       }
-      const rect = container.getBoundingClientRect();
-      const width = Math.round(rect.width);
-      const height = Math.round(rect.height);
+      let width;
+      let height;
+      if (isEntering) {
+        const rect = container.getBoundingClientRect();
+        width = Math.round(rect.width);
+        height = Math.round(rect.height);
+      } else {
+        // À la sortie, on restaure les dimensions exactes mesurées juste avant d'entrer en plein
+        // écran (cf. le click ci-dessus) plutôt que de re-mesurer le conteneur ici : identique au
+        // correctif déjà appliqué à COPSOQ (cf. ensureCopsoqFullscreenBehavior).
+        width = Number(container.dataset.karasekOriginalWidth) || 0;
+        height = Number(container.dataset.karasekOriginalHeight) || 0;
+      }
       const layoutUpdate = isEntering
         ? { paper_bgcolor: "#ffffff", plot_bgcolor: "#ffffff" }
         : { paper_bgcolor: "rgba(255,255,255,1)", plot_bgcolor: "rgba(255,255,255,1)" };
@@ -2294,6 +2965,10 @@ function setActiveMenuLink(activeLink) {
   }
 }
 function openContent(contentId, activeLink) {
+  // Seules les 3 vues "Rapprochement RPS" (diagrammes Sankey larges) génèrent leur rapport Word en
+  // paysage ; toute autre navigation revient au portrait par défaut (cf. generateReportDocx).
+  document.body.classList.remove("landscape-report");
+
   if (externalMenuLinks[contentId]) {
     window.open(externalMenuLinks[contentId], "_blank", "noopener,noreferrer");
     setActiveMenuLink(activeLink);
@@ -2401,6 +3076,7 @@ function openContent(contentId, activeLink) {
   }
 
   if (contentId === "rapprochement-rps-rapprochement-rps-individuel") {
+    document.body.classList.add("landscape-report");
     renderRpsGollacIndividualView();
     setActiveMenuLink(activeLink);
     scrollToPageTop();
@@ -2408,6 +3084,7 @@ function openContent(contentId, activeLink) {
   }
 
   if (contentId === "rapprochement-rps-rapprochement-rps-de-plusieurs-individus") {
+    document.body.classList.add("landscape-report");
     renderRpsGollacMultiIndividualsView();
     setActiveMenuLink(activeLink);
     scrollToPageTop();
@@ -2415,6 +3092,7 @@ function openContent(contentId, activeLink) {
   }
 
   if (contentId === "rapprochement-rps-rapprochement-rps-de-groupes") {
+    document.body.classList.add("landscape-report");
     renderRpsGollacGroupsView();
     setActiveMenuLink(activeLink);
     scrollToPageTop();
@@ -2877,8 +3555,11 @@ function buildRpsGollacSankeyFigure() {
     (domain) => copsoqEchelles.filter(([echelle]) => getCopsoqDomainByEchelle()[echelle] === domain).length,
   );
   const axisWeights = rpsGollacAxes.map((axis) => copsoqEchelles.filter(([, echelleAxis]) => echelleAxis === axis).length);
-  const domainY = stackRpsGollacSankeyColumnByWeight(domainWeights, copsoqEchelles.length, height);
-  const axisY = stackRpsGollacSankeyColumnByWeight(axisWeights, copsoqEchelles.length, height);
+  // Gap de 40 (au lieu du défaut 22 de stackRpsGollacSankeyColumnByWeight) : les étiquettes
+  // Domaines/Axes sont positionnées au-dessus de leur nœud (cf. ensureRpsGollacSankeyLabelPositions),
+  // il leur faut donc plus de place que le simple espacement entre nœuds.
+  const domainY = stackRpsGollacSankeyColumnByWeight(domainWeights, copsoqEchelles.length, height, 40);
+  const axisY = stackRpsGollacSankeyColumnByWeight(axisWeights, copsoqEchelles.length, height, 40);
 
   const nodeLabels = [];
   const nodeX = [];
@@ -2972,7 +3653,7 @@ function buildRpsGollacSankeyFigure() {
 // Capture littérale du SVG affiché à l'écran, plutôt que Plotly.toImage/downloadImage (bouton
 // "toImage" natif) qui régénèrent une image à partir de la config figure/layout d'origine — et
 // perdraient donc le repositionnement des étiquettes appliqué après coup en DOM (cf.
-// ensureRpsGollacGroupsSankeyLabelPositions), tout comme le nom de fichier par défaut de Plotly
+// ensureRpsGollacSankeyLabelPositions), tout comme le nom de fichier par défaut de Plotly
 // ("newplot"). Sérialise le <svg> actuellement affiché puis le redessine sur un canvas (fond
 // blanc) pour produire le PNG téléchargé, avec un nom de fichier cohérent avec le reste de
 // l'application (préfixe-timestamp.png, cf. getKarasekPlotConfig/toImageButtonOptions).
@@ -3021,6 +3702,7 @@ function getRpsGollacSankeyExportButton(container, filenamePrefix) {
 
 function getRpsGollacSimplePlotConfig(container, filenamePrefix = "rps-gollac") {
   return {
+    locale: "fr",
     responsive: true,
     displaylogo: false,
     modeBarButtonsToRemove: [
@@ -3076,15 +3758,24 @@ function renderRpsGollacSankey(plotId) {
     autosize: true,
     height,
     font: { size: 12 },
-    margin: { l: 10, r: 10, t: RPS_GOLLAC_SANKEY_MARGIN, b: RPS_GOLLAC_SANKEY_MARGIN },
+    margin: getRpsGollacSankeyMargin(),
   };
   // Fixe la hauteur réelle du conteneur : sans cela, "responsive" la ramène au
   // min-height CSS (bien plus petit) au moindre redimensionnement, masquant les nœuds.
   container.style.height = `${height}px`;
   ensureCopsoqFullscreenBehavior(container);
-  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container, "rapprochement-rps-referentiel")).then(() =>
-    ensureRpsGollacSankeyHoverHighlight(container),
-  );
+  const nodeColumnByIndex = getRpsGollacSankeyNodeColumnByIndex();
+  container._rpsGollacSankeyNodeColumnByIndex = nodeColumnByIndex;
+  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container, "rapprochement-rps-referentiel")).then(() => {
+    const reapplyCustomization = () => {
+      ensureRpsGollacSankeyLabelPositions(container, nodeColumnByIndex);
+      ensureRpsGollacSankeyHoverHighlight(container);
+    };
+    reapplyCustomization();
+    if (typeof container.on === "function") {
+      container.on("plotly_relayout", reapplyCustomization);
+    }
+  });
 }
 
 // Survol d'un lien : le met en évidence avec tous les liens qu'il alimente en aval (colonnes
@@ -3283,7 +3974,7 @@ function computeRpsGollacCorrespondanceScores(karasekFiles, copsoqFiles) {
   return { echelleScores, domainScores, axisScores, karasekDimScores };
 }
 
-function buildRpsGollacCorrespondanceSankeyFigure(scores, linkColorOverride = null, domainAxisGapPx = 22) {
+function buildRpsGollacCorrespondanceSankeyFigure(scores, linkColorOverride = null, domainAxisGapPx = 40) {
   const { copsoqEchelles, copsoqDomains, sortedKarasekDims } = getRpsGollacCorrespondenceEntries();
   const { echelleScores, domainScores, axisScores, karasekDimScores } = scores;
   const referenceCount = Math.max(
@@ -3430,13 +4121,22 @@ function renderRpsGollacCorrespondanceSankey(plotId, scores, filenamePrefix = "r
     autosize: true,
     height,
     font: { size: 12 },
-    margin: { l: 10, r: 10, t: RPS_GOLLAC_SANKEY_MARGIN, b: RPS_GOLLAC_SANKEY_MARGIN },
+    margin: getRpsGollacSankeyMargin(),
   };
   container.style.height = `${height}px`;
   ensureCopsoqFullscreenBehavior(container);
-  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container, filenamePrefix)).then(() =>
-    ensureRpsGollacSankeyHoverHighlight(container),
-  );
+  const nodeColumnByIndex = getRpsGollacSankeyNodeColumnByIndex();
+  container._rpsGollacSankeyNodeColumnByIndex = nodeColumnByIndex;
+  Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container, filenamePrefix)).then(() => {
+    const reapplyCustomization = () => {
+      ensureRpsGollacSankeyLabelPositions(container, nodeColumnByIndex);
+      ensureRpsGollacSankeyHoverHighlight(container);
+    };
+    reapplyCustomization();
+    if (typeof container.on === "function") {
+      container.on("plotly_relayout", reapplyCustomization);
+    }
+  });
 }
 
 function computeRpsGollacAxisStatistics(scoreMaps) {
@@ -3453,20 +4153,37 @@ function computeRpsGollacAxisStatistics(scoreMaps) {
   return stats;
 }
 
-function createRpsGollacScorePastille(score) {
-  const wrap = document.createElement("span");
-  wrap.className = "rps-score-pastille-wrap";
-  if (!Number.isFinite(score)) {
-    wrap.textContent = "—";
-    return wrap;
-  }
+// Pastille colorée (sans texte) reflétant un score Karasek-Siegrist/COPSOQ dans les tableaux de
+// comparaison "Rapprochement RPS" (cf. buildRpsGollacComparisonTable et consorts) ; gris neutre si
+// aucune donnée pour ce questionnaire.
+// Caractère "⬤" (U+2B24, cercle plein) utilisé pour toutes les pastilles colorées "sans nombre" de
+// l'application : contrairement à un span vide coloré via background-color (qui perd sa couleur une
+// fois converti en document Word, cf. generateReportDocx — Word n'applique une trame de fond qu'à un
+// "run" de texte, jamais à un élément inline vide), un caractère coloré via la propriété `color`
+// (couleur du texte) survit de façon fiable à la conversion HTML → DOCX. La forme parfaitement
+// ronde est garantie par CSS (border-radius:50% + overflow:hidden + taille de police volontairement
+// surdimensionnée, cf. .rps-score-pastille et consorts dans styles.css) plutôt que par le glyphe lui-même.
+const RPS_BULLET_GLYPH = "\u2B24";
+function createRpsGollacScoreBullet(score) {
   const dot = document.createElement("span");
   dot.className = "rps-score-pastille";
-  dot.style.backgroundColor = getScoreColor(score);
-  const text = document.createElement("span");
-  text.textContent = String(score);
-  wrap.append(dot, text);
-  return wrap;
+  dot.style.color = Number.isFinite(score) ? getScoreColor(score) : "#d9e4ea";
+  dot.setAttribute("aria-hidden", "true");
+  dot.textContent = RPS_BULLET_GLYPH;
+  return dot;
+}
+
+// Élément "Répartition" affiché à l'écran : disque plein coloré (background-color) contenant le
+// nombre — compact et lisible sur une page web. Ce rendu n'est PAS repris tel quel dans le rapport
+// Word (cf. convertRepartitionBulletsForReport) : Word n'honore ni border-radius (le disque devient
+// un carré) ni l'espacement flex `gap` entre pastilles voisines (les nombres se retrouvent collés).
+function createCopsoqRepartitionBullet(count, color) {
+  const bullet = document.createElement("span");
+  bullet.className = "copsoq-repartition-bullet";
+  bullet.style.backgroundColor = color;
+  bullet.style.color = getContrastTextColor(color);
+  bullet.textContent = String(count);
+  return bullet;
 }
 
 function buildRpsGollacComparisonTable(karasekScores, copsoqScores) {
@@ -3474,10 +4191,9 @@ function buildRpsGollacComparisonTable(karasekScores, copsoqScores) {
   wrap.className = "results-table-wrap";
   const table = document.createElement("table");
   table.className = "results-table";
-  table.style.width = "auto";
   const thead = document.createElement("thead");
   thead.innerHTML =
-    "<tr><th>Facteurs Gollac / INRS</th><th style='white-space: nowrap;'>Karasek-Siegrist</th><th style='white-space: nowrap;'>COPSOQ (FR)</th><th>Écart</th></tr>";
+    "<tr><th>Facteurs Gollac / INRS</th><th>Karasek-Siegrist</th><th>COPSOQ (FR)</th><th style='text-align: center;'>Écart</th></tr>";
   const tbody = document.createElement("tbody");
   rpsGollacAxes.forEach((axis) => {
     const karasekScore = karasekScores ? karasekScores[axis] : null;
@@ -3487,15 +4203,15 @@ function buildRpsGollacComparisonTable(karasekScores, copsoqScores) {
     axisCell.textContent = axis;
     const karasekCell = document.createElement("td");
     karasekCell.className = "check-cell";
-    karasekCell.append(createRpsGollacScorePastille(karasekScore));
+    karasekCell.append(createRpsGollacScoreBullet(karasekScore));
     const copsoqCell = document.createElement("td");
     copsoqCell.className = "check-cell";
-    copsoqCell.append(createRpsGollacScorePastille(copsoqScore));
+    copsoqCell.append(createRpsGollacScoreBullet(copsoqScore));
     const gapCell = document.createElement("td");
     gapCell.className = "check-cell";
     gapCell.textContent =
       Number.isFinite(karasekScore) && Number.isFinite(copsoqScore)
-        ? String(Math.abs(karasekScore - copsoqScore))
+        ? `${Math.abs(karasekScore - copsoqScore)}%`
         : "—";
     row.append(axisCell, karasekCell, copsoqCell, gapCell);
     tbody.append(row);
@@ -3522,7 +4238,12 @@ function buildCopsoqActionsPrioritairesTable(loadedFiles, lang) {
     wrap.append(placeholder);
     return wrap;
   }
-  const { scaleValuesByDomain, questionValuesByDomain } = buildCopsoqAggregateStatistics(files);
+  const { domainValues, scaleValuesByDomain, questionValuesByDomain } = buildCopsoqAggregateStatistics(files);
+  const domainScores = {};
+  Object.keys(domainValues).forEach((domaine) => {
+    const values = domainValues[domaine];
+    domainScores[domaine] = Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+  });
   const rows = [];
   Object.keys(scaleValuesByDomain).forEach((domaine) => {
     Object.keys(scaleValuesByDomain[domaine]).forEach((echelle) => {
@@ -3539,22 +4260,29 @@ function buildCopsoqActionsPrioritairesTable(loadedFiles, lang) {
 
   const table = document.createElement("table");
   table.className = "results-table";
-  table.style.tableLayout = "fixed";
-  const colgroup = document.createElement("colgroup");
-  colgroup.innerHTML = '<col style="width: 14%;"><col style="width: 14%;"><col>';
   const thead = document.createElement("thead");
   thead.innerHTML = `<tr><th>${t.thDomain}</th><th>${t.thScale}</th><th>${t.thPriorityItems}</th></tr>`;
   const tbody = document.createElement("tbody");
-  rows.forEach((row) => {
+  rows.forEach((row, rowIndex) => {
     const tr = document.createElement("tr");
+    if (rowIndex % 2 === 1) {
+      tr.classList.add("results-row-alt");
+    }
     const domaineCell = document.createElement("td");
     domaineCell.style.verticalAlign = "top";
-    domaineCell.textContent = row.domaine;
+    const domaineBullet = document.createElement("span");
+    domaineBullet.className = "rps-score-pastille";
+    domaineBullet.style.color = getScoreColor(domainScores[row.domaine]);
+    domaineBullet.textContent = RPS_BULLET_GLYPH;
+    const domaineLabel = document.createElement("span");
+    domaineLabel.textContent = ` ${row.domaine}`;
+    domaineCell.append(domaineBullet, domaineLabel);
     const echelleCell = document.createElement("td");
     echelleCell.style.verticalAlign = "top";
     const echelleBullet = document.createElement("span");
     echelleBullet.className = "rps-score-pastille";
-    echelleBullet.style.backgroundColor = getScoreColor(row.score);
+    echelleBullet.style.color = getScoreColor(row.score);
+    echelleBullet.textContent = RPS_BULLET_GLYPH;
     const echelleLabel = document.createElement("span");
     echelleLabel.textContent = ` ${row.echelle}`;
     echelleCell.append(echelleBullet, echelleLabel);
@@ -3567,7 +4295,8 @@ function buildCopsoqActionsPrioritairesTable(loadedFiles, lang) {
         const li = document.createElement("li");
         const bullet = document.createElement("span");
         bullet.className = "rps-score-pastille";
-        bullet.style.backgroundColor = getScoreColor(item.score);
+        bullet.style.color = getScoreColor(item.score);
+        bullet.textContent = RPS_BULLET_GLYPH;
         const label = document.createElement("span");
         label.textContent = item.question;
         li.append(bullet, label);
@@ -3577,7 +4306,7 @@ function buildCopsoqActionsPrioritairesTable(loadedFiles, lang) {
     tr.append(domaineCell, echelleCell, itemsCell);
     tbody.append(tr);
   });
-  table.append(colgroup, thead, tbody);
+  table.append(thead, tbody);
   wrap.append(table);
   return wrap;
 }
@@ -3600,11 +4329,11 @@ function renderRpsGollacIndividualView() {
   contentRoot.innerHTML = "";
 
   const title = document.createElement("h2");
-  title.className = "content-title";
+  title.className = "content-title results-report-title";
   title.textContent = "Rapprochement RPS individuel";
 
   const intro = document.createElement("article");
-  intro.className = "content-card";
+  intro.className = "content-card rps-intro-note";
   intro.innerHTML =
     "<p>Chargez un résultat sauvegardé (fichier .json exporté depuis les pages « Questionnaire ») de Karasek-Siegrist et/ou de COPSOQ pour comparer les scores obtenus sur les 6 axes du " +
     "<a href='https://travail-emploi.gouv.fr/mesurer-les-facteurs-psychosociaux-de-risque-au-travail-pour-les-maitriser' target='_blank' rel='noopener noreferrer'>rapport « Gollac »</a> repris par " +
@@ -3636,12 +4365,16 @@ function renderRpsGollacIndividualView() {
   copsoqBtn.textContent = "Charger un résultat COPSOQ Français (.json)";
 
   const karasekStatus = document.createElement("span");
-  karasekStatus.textContent = "Aucun fichier Karasek-Siegrist chargé.";
+  karasekStatus.textContent = rpsIndividualKarasekResult
+    ? `Karasek-Siegrist : ${rpsIndividualKarasekResult.fileName}`
+    : "Aucun fichier Karasek-Siegrist chargé.";
 
   const copsoqStatus = document.createElement("span");
-  copsoqStatus.textContent = "Aucun fichier COPSOQ chargé.";
+  copsoqStatus.textContent = rpsIndividualCopsoqResult
+    ? `COPSOQ : ${rpsIndividualCopsoqResult.fileName}`
+    : "Aucun fichier COPSOQ chargé.";
 
-  actions.append(karasekBtn, karasekStatus, copsoqBtn, copsoqStatus);
+  actions.append(karasekBtn, karasekStatus, copsoqBtn, copsoqStatus, createGenerateReportButton("Rapprochement RPS individuel", { compact: false }));
 
   const reportHeading = document.createElement("h3");
   reportHeading.textContent = "Actions prioritaires";
@@ -3660,19 +4393,16 @@ function renderRpsGollacIndividualView() {
   plotArea.className = "plot-area";
   plotPanel.append(plotArea);
 
-  let karasekResult = null;
-  let copsoqResult = null;
-
   function refreshComparison() {
-    const karasekScores = karasekResult ? computeKarasekAxisScores(karasekResult.ordered) : null;
-    const copsoqScores = copsoqResult ? computeCopsoqAxisScores(copsoqResult.answers) : null;
+    const karasekScores = rpsIndividualKarasekResult ? computeKarasekAxisScores(rpsIndividualKarasekResult.ordered) : null;
+    const copsoqScores = rpsIndividualCopsoqResult ? computeCopsoqAxisScores(rpsIndividualCopsoqResult.answers) : null;
     reportHost.innerHTML = "";
-    reportHost.append(buildCopsoqActionsPrioritairesTable(copsoqResult ? [copsoqResult] : []));
+    reportHost.append(buildCopsoqActionsPrioritairesTable(rpsIndividualCopsoqResult ? [rpsIndividualCopsoqResult] : []));
     comparisonHost.innerHTML = "";
     comparisonHost.append(buildRpsGollacComparisonTable(karasekScores, copsoqScores));
     const correspondanceScores = computeRpsGollacCorrespondanceScores(
-      karasekResult ? [karasekResult] : [],
-      copsoqResult ? [copsoqResult] : [],
+      rpsIndividualKarasekResult ? [rpsIndividualKarasekResult] : [],
+      rpsIndividualCopsoqResult ? [rpsIndividualCopsoqResult] : [],
     );
     renderRpsGollacCorrespondanceSankey("rps-gollac-individual-sankey", correspondanceScores, "rapprochement-rps-individuel");
   }
@@ -3686,8 +4416,8 @@ function renderRpsGollacIndividualView() {
       return;
     }
     try {
-      karasekResult = await readKarasekSavedFile(file);
-      karasekStatus.textContent = `Karasek-Siegrist : ${karasekResult.fileName}`;
+      rpsIndividualKarasekResult = await readKarasekSavedFile(file);
+      karasekStatus.textContent = `Karasek-Siegrist : ${rpsIndividualKarasekResult.fileName}`;
       refreshComparison();
     } catch (error) {
       alert(error.message || "Impossible de charger le fichier Karasek-Siegrist.");
@@ -3706,8 +4436,8 @@ function renderRpsGollacIndividualView() {
       if (resolveLang(data.lang) !== "fr") {
         throw new Error("Cette vue nécessite un résultat COPSOQ en version française.");
       }
-      copsoqResult = data;
-      copsoqStatus.textContent = `COPSOQ : ${copsoqResult.fileName}`;
+      rpsIndividualCopsoqResult = data;
+      copsoqStatus.textContent = `COPSOQ : ${rpsIndividualCopsoqResult.fileName}`;
       refreshComparison();
     } catch (error) {
       alert(error.message || "Impossible de charger le fichier COPSOQ.");
@@ -3776,7 +4506,6 @@ function buildRpsGollacMultiStatsTable(karasekStats, copsoqStats) {
   wrap.className = "results-table-wrap";
   const table = document.createElement("table");
   table.className = "results-table";
-  table.style.width = "auto";
   const thead = document.createElement("thead");
   const headRow1 = document.createElement("tr");
   const axisHeader = document.createElement("th");
@@ -3795,14 +4524,19 @@ function buildRpsGollacMultiStatsTable(karasekStats, copsoqStats) {
     ["Karasek-Siegrist", "COPSOQ (FR)", "Écart"].forEach((label) => {
       const th = document.createElement("th");
       th.textContent = label;
-      th.style.whiteSpace = "nowrap";
+      if (label === "Écart") {
+        th.style.textAlign = "center";
+      }
       headRow2.append(th);
     });
   });
   thead.append(headRow1, headRow2);
   const tbody = document.createElement("tbody");
-  rpsGollacAxes.forEach((axis) => {
+  rpsGollacAxes.forEach((axis, axisIndex) => {
     const row = document.createElement("tr");
+    if (axisIndex % 2 === 1) {
+      row.classList.add("results-row-alt");
+    }
     const axisCell = document.createElement("td");
     axisCell.textContent = axis;
     row.append(axisCell);
@@ -3811,15 +4545,15 @@ function buildRpsGollacMultiStatsTable(karasekStats, copsoqStats) {
       const copsoqValue = copsoqStats ? copsoqStats[axis][statKey] : null;
       const karasekCell = document.createElement("td");
       karasekCell.className = "check-cell";
-      karasekCell.append(createRpsGollacScorePastille(karasekValue));
+      karasekCell.append(createRpsGollacScoreBullet(karasekValue));
       const copsoqCell = document.createElement("td");
       copsoqCell.className = "check-cell";
-      copsoqCell.append(createRpsGollacScorePastille(copsoqValue));
+      copsoqCell.append(createRpsGollacScoreBullet(copsoqValue));
       const gapCell = document.createElement("td");
       gapCell.className = "check-cell";
       gapCell.textContent =
         Number.isFinite(karasekValue) && Number.isFinite(copsoqValue)
-          ? String(Math.abs(karasekValue - copsoqValue))
+          ? `${Math.abs(karasekValue - copsoqValue)}%`
           : "—";
       row.append(karasekCell, copsoqCell, gapCell);
     });
@@ -3838,11 +4572,11 @@ function renderRpsGollacMultiIndividualsView() {
   contentRoot.innerHTML = "";
 
   const title = document.createElement("h2");
-  title.className = "content-title";
+  title.className = "content-title results-report-title";
   title.textContent = "Rapprochement RPS de plusieurs individus";
 
   const intro = document.createElement("article");
-  intro.className = "content-card";
+  intro.className = "content-card rps-intro-note";
   intro.innerHTML =
     "<p>Ajoutez un ou plusieurs fichiers .json Karasek-Siegrist et/ou COPSOQ Français. Vous pouvez ajouter des fichiers à plusieurs reprises : les statistiques (moyenne, médiane, minimum, maximum) sont recalculées sur l'ensemble des fichiers chargés.</p>";
 
@@ -3874,7 +4608,26 @@ function renderRpsGollacMultiIndividualsView() {
   const karasekStatus = document.createElement("span");
   const copsoqStatus = document.createElement("span");
 
-  actions.append(karasekBtn, karasekStatus, copsoqBtn, copsoqStatus);
+  const resetBtn = document.createElement("button");
+  resetBtn.type = "button";
+  resetBtn.className = "secondary-btn";
+  resetBtn.textContent = "Réinitialiser les imports";
+  resetBtn.addEventListener("click", () => {
+    rpsMultiKarasekFiles = [];
+    rpsMultiCopsoqFiles = [];
+    rpsMultiKarasekBatches = [];
+    rpsMultiCopsoqBatches = [];
+    refresh();
+  });
+
+  actions.append(
+    karasekBtn,
+    karasekStatus,
+    copsoqBtn,
+    copsoqStatus,
+    resetBtn,
+    createGenerateReportButton("Rapprochement RPS de plusieurs individus", { compact: false }),
+  );
 
   const resultsHeading = document.createElement("h3");
   resultsHeading.textContent = "Comparaison des statistiques";
@@ -3993,10 +4746,10 @@ function renderRpsGollacMultiIndividualsView() {
     intro,
     actions,
     plotPanel,
-    resultsHeading,
-    comparisonHost,
     reportHeading,
     reportHost,
+    resultsHeading,
+    comparisonHost,
     detailsHeading,
     detailsHost,
     karasekInput,
@@ -4032,7 +4785,6 @@ function buildRpsGollacGroupsTable(entries) {
   wrap.className = "results-table-wrap";
   const table = document.createElement("table");
   table.className = "results-table";
-  table.style.width = "auto";
 
   const lots = getRpsGollacGroupLots(entries);
   const columnCount = 1 + rpsStatKeys.length * 3;
@@ -4055,7 +4807,9 @@ function buildRpsGollacGroupsTable(entries) {
     ["Karasek-Siegrist", "COPSOQ (FR)", "Écart"].forEach((label) => {
       const th = document.createElement("th");
       th.textContent = label;
-      th.style.whiteSpace = "nowrap";
+      if (label === "Écart") {
+        th.style.textAlign = "center";
+      }
       headRow2.append(th);
     });
   });
@@ -4097,15 +4851,15 @@ function buildRpsGollacGroupsTable(entries) {
         const copsoqValue = copsoqEntry ? copsoqEntry.stats[axis][statKey] : null;
         const karasekCell = document.createElement("td");
         karasekCell.className = "check-cell";
-        karasekCell.append(createRpsGollacScorePastille(karasekValue));
+        karasekCell.append(createRpsGollacScoreBullet(karasekValue));
         const copsoqCell = document.createElement("td");
         copsoqCell.className = "check-cell";
-        copsoqCell.append(createRpsGollacScorePastille(copsoqValue));
+        copsoqCell.append(createRpsGollacScoreBullet(copsoqValue));
         const gapCell = document.createElement("td");
         gapCell.className = "check-cell";
         gapCell.textContent =
           Number.isFinite(karasekValue) && Number.isFinite(copsoqValue)
-            ? String(Math.abs(karasekValue - copsoqValue))
+            ? `${Math.abs(karasekValue - copsoqValue)}%`
             : "—";
         row.append(karasekCell, copsoqCell, gapCell);
       });
@@ -4121,7 +4875,7 @@ function buildRpsGollacGroupsTable(entries) {
 // Sankey de correspondance, mais les liens reprennent la couleur du repère du lot (au lieu
 // d'être colorés par score) pour rester identifiables comme appartenant à ce lot précis.
 // Étiquettes positionnées comme la vue superposant tous les lots (cf.
-// ensureRpsGollacGroupsSankeyLabelPositions), pour les mêmes raisons de lisibilité.
+// ensureRpsGollacSankeyLabelPositions), pour les mêmes raisons de lisibilité.
 function renderRpsGollacGroupSankey(plotId, karasekEntry, copsoqEntry, lotColor) {
   const container = document.getElementById(plotId);
   if (!container || typeof Plotly === "undefined") {
@@ -4131,25 +4885,23 @@ function renderRpsGollacGroupSankey(plotId, karasekEntry, copsoqEntry, lotColor)
     karasekEntry ? karasekEntry.files : [],
     copsoqEntry ? copsoqEntry.files : [],
   );
-  // Gap de 40 (au lieu du défaut 22) : les étiquettes Domaines/Axes sont désormais placées
-  // au-dessus de leur nœud (cf. ensureRpsGollacGroupsSankeyLabelPositions), il leur faut donc
-  // plus de place que pour les autres Sankey qui gardent l'espacement/positionnement par défaut.
-  const figure = buildRpsGollacCorrespondanceSankeyFigure(scores, hexToRgba(lotColor, 0.55), 40);
+  const figure = buildRpsGollacCorrespondanceSankeyFigure(scores, hexToRgba(lotColor, 0.55));
   const height = getRpsGollacSankeyHeight();
   const layout = {
     autosize: true,
     height,
     font: { size: 12 },
-    margin: getRpsGollacGroupsSankeyMargin(),
+    margin: getRpsGollacSankeyMargin(),
   };
   container.style.height = `${height}px`;
   ensureCopsoqFullscreenBehavior(container);
   const nodeColumnByIndex = getRpsGollacSankeyNodeColumnByIndex();
+  container._rpsGollacSankeyNodeColumnByIndex = nodeColumnByIndex;
   const lotLabelMatch = /Lot (\d+)/.exec((karasekEntry || copsoqEntry || {}).label || "");
   const filenamePrefix = lotLabelMatch ? `rapprochement-rps-groupes-lot-${lotLabelMatch[1]}` : "rapprochement-rps-groupes-lot";
   Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container, filenamePrefix)).then(() => {
     const reapplyLotCustomization = () => {
-      ensureRpsGollacGroupsSankeyLabelPositions(container, nodeColumnByIndex);
+      ensureRpsGollacSankeyLabelPositions(container, nodeColumnByIndex);
       ensureRpsGollacSankeyHoverHighlight(container);
     };
     reapplyLotCustomization();
@@ -4195,7 +4947,7 @@ function buildRpsGollacGroupsOverlaySankeyFigure(lots) {
   );
   // Espace vertical accru (40px par lot chargé, au lieu des 22 par défaut) : les étiquettes de
   // ces deux colonnes sont désormais placées AU-DESSUS de chaque nœud
-  // (ensureRpsGollacGroupsSankeyLabelPositions), et chaque nœud grandit lui-même avec le
+  // (ensureRpsGollacSankeyLabelPositions), et chaque nœud grandit lui-même avec le
   // nombre de lots (davantage de liens empilés le traversent) — un espacement fixe suffisant à
   // 1 lot ne l'est donc plus dès qu'un 2e lot est chargé ; le multiplier par `lotCount` compense.
   const domainY = stackRpsGollacSankeyColumnByWeight(domainWeights, copsoqEchelles.length * lotCount, height, 40 * lotCount);
@@ -4502,10 +5254,9 @@ function ensureRpsGollacGroupsOverlayHover(container, nodeColorByLot) {
 // les échelles COPSOQ (les rubans sortent par la droite), à droite pour les dimensions
 // Karasek-Siegrist (les rubans entrent par la gauche), et au-dessus pour les domaines COPSOQ /
 // facteurs Gollac-INRS (colonnes du milieu, avec des rubans des deux côtés). Cela évite qu'une
-// étiquette colorée se retrouve peu lisible sur un ruban/nœud de couleur proche. Utilisé par les
-// deux vues Sankey de "Rapprochement RPS de groupes" (superposition de tous les lots et détail
-// d'un seul lot).
-function ensureRpsGollacGroupsSankeyLabelPositions(container, nodeColumnByIndex) {
+// étiquette colorée se retrouve peu lisible sur un ruban/nœud de couleur proche. Utilisé par
+// tous les Sankey de "Rapprochement RPS" (Référentiel, individuel, plusieurs individus, groupes).
+function ensureRpsGollacSankeyLabelPositions(container, nodeColumnByIndex) {
   const nodeGroups = Array.from(container.querySelectorAll("svg g.sankey-node"));
   nodeGroups.forEach((group) => {
     const node = group.__data__ && group.__data__.node;
@@ -4530,11 +5281,11 @@ function ensureRpsGollacGroupsSankeyLabelPositions(container, nodeColumnByIndex)
   });
 }
 
-// Colonne (échelle/domaine/axe/dimension) de chaque index de nœud, dans l'ordre commun aux deux
-// figures Sankey de "Rapprochement RPS de groupes" (échelles, puis domaines, puis axes, puis
-// dimensions Karasek-Siegrist) — sert de base à ensureRpsGollacGroupsSankeyLabelPositions pour la
-// vue détail d'un seul lot (buildRpsGollacCorrespondanceSankeyFigure n'a pas sa propre carte de
-// colonnes, contrairement à buildRpsGollacGroupsOverlaySankeyFigure qui construit la sienne).
+// Colonne (échelle/domaine/axe/dimension) de chaque index de nœud, dans l'ordre commun à toutes
+// les figures Sankey de "Rapprochement RPS" (échelles, puis domaines, puis axes, puis
+// dimensions Karasek-Siegrist) — sert de base à ensureRpsGollacSankeyLabelPositions pour toutes
+// les vues sauf la superposition de tous les lots (buildRpsGollacGroupsOverlaySankeyFigure
+// construit et retourne sa propre carte de colonnes, cf. son champ nodeColumnByIndex).
 function getRpsGollacSankeyNodeColumnByIndex() {
   const { copsoqEchelles, copsoqDomains, sortedKarasekDims } = getRpsGollacCorrespondenceEntries();
   const nodeColumnByIndex = new Map();
@@ -4548,10 +5299,10 @@ function getRpsGollacSankeyNodeColumnByIndex() {
 
 // Largeur (px) d'une étiquette avec la même police que celle utilisée par Plotly pour les
 // nœuds Sankey (cf. le <text class="node-label"> rendu : "Open Sans", verdana, arial,
-// sans-serif, 12px) — sert à dimensionner les marges gauche/droite des Sankey de
-// "Rapprochement RPS de groupes" en fonction du texte réellement affiché, puisque les
+// sans-serif, 12px) — sert à dimensionner les marges gauche/droite de tous les Sankey de
+// "Rapprochement RPS" en fonction du texte réellement affiché, puisque les
 // étiquettes Échelles/Karasek-Siegrist y débordent désormais du nœud vers l'extérieur du
-// graphique (cf. ensureRpsGollacGroupsSankeyLabelPositions) au lieu de rester dans la marge par
+// graphique (cf. ensureRpsGollacSankeyLabelPositions) au lieu de rester dans la marge par
 // défaut de Plotly (trop étroite, ce qui les tronquait).
 function measureRpsGollacSankeyLabelWidth(text) {
   if (!measureRpsGollacSankeyLabelWidth.ctx) {
@@ -4561,11 +5312,10 @@ function measureRpsGollacSankeyLabelWidth(text) {
   return measureRpsGollacSankeyLabelWidth.ctx.measureText(text).width;
 }
 
-// Marges gauche/droite communes aux deux Sankey de "Rapprochement RPS de groupes" (calées sur la
+// Marges gauche/droite communes à tous les Sankey de "Rapprochement RPS" (calées sur la
 // plus longue étiquette Échelle/Karasek-Siegrist + le décalage hors du nœud, cf.
-// ensureRpsGollacGroupsSankeyLabelPositions) plutôt que la marge fixe des autres Sankey de
-// l'application.
-function getRpsGollacGroupsSankeyMargin() {
+// ensureRpsGollacSankeyLabelPositions).
+function getRpsGollacSankeyMargin() {
   const { copsoqEchelles, sortedKarasekDims } = getRpsGollacCorrespondenceEntries();
   const echelleMaxWidth = copsoqEchelles.reduce(
     (max, [echelle]) => Math.max(max, measureRpsGollacSankeyLabelWidth(echelle)),
@@ -4602,14 +5352,15 @@ function renderRpsGollacGroupsOverlaySankey(plotId, entries) {
     autosize: true,
     height,
     font: { size: 12 },
-    margin: getRpsGollacGroupsSankeyMargin(),
+    margin: getRpsGollacSankeyMargin(),
   };
   container.style.height = `${height}px`;
   container.dataset.plotlyInitialized = "true";
   ensureCopsoqFullscreenBehavior(container);
+  container._rpsGollacSankeyNodeColumnByIndex = figure.nodeColumnByIndex;
   Plotly.newPlot(container, figure.data, layout, getRpsGollacSimplePlotConfig(container, "rapprochement-rps-groupes")).then(() => {
     const reapplyOverlayCustomization = () => {
-      ensureRpsGollacGroupsSankeyLabelPositions(container, figure.nodeColumnByIndex);
+      ensureRpsGollacSankeyLabelPositions(container, figure.nodeColumnByIndex);
       ensureRpsGollacGroupsOverlayHover(container, figure.nodeColorByLot);
     };
     reapplyOverlayCustomization();
@@ -4658,22 +5409,79 @@ function formatRpsGollacFileCount(count) {
   return `${count} fichier${count > 1 ? "s" : ""}`;
 }
 
-function buildRpsGollacGroupsSummary(entries) {
+function buildRpsGollacGroupsFilesTable(entries, selectedLotNumber, onToggleLot) {
   const wrap = document.createElement("div");
-  wrap.className = "results-layout";
-  wrap.style.gridTemplateColumns = "1fr 1fr";
-  const formatEntry = (entry) => `${entry.label} : ${formatRpsGollacFileCount(entry.fileNames.length)}`;
-  wrap.append(
-    buildRpsGollacGroupsListColumn(entries, "karasek", formatEntry),
-    buildRpsGollacGroupsListColumn(entries, "copsoq", formatEntry),
-  );
+  wrap.className = "results-table-wrap";
+  const table = document.createElement("table");
+  table.className = "results-table";
+  const lots = getRpsGollacGroupLots(entries);
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  ["Lot", "Karasek-Siegrist", "COPSOQ (FR)", ""].forEach((text) => {
+    const th = document.createElement("th");
+    th.textContent = text;
+    headRow.append(th);
+  });
+  thead.append(headRow);
+  table.append(thead);
+
+  const tbody = document.createElement("tbody");
+  if (!lots.length) {
+    const emptyRow = document.createElement("tr");
+    const emptyCell = document.createElement("td");
+    emptyCell.colSpan = 4;
+    emptyCell.textContent = "Aucun lot chargé.";
+    emptyRow.append(emptyCell);
+    tbody.append(emptyRow);
+  } else {
+    lots.forEach((lot) => {
+      const row = document.createElement("tr");
+
+      const labelCell = document.createElement("td");
+      const swatch = document.createElement("span");
+      swatch.style.display = "inline-block";
+      swatch.style.width = "10px";
+      swatch.style.height = "10px";
+      swatch.style.borderRadius = "50%";
+      swatch.style.marginRight = "6px";
+      swatch.style.backgroundColor = lot.color;
+      labelCell.append(swatch, document.createTextNode(`Lot ${lot.lotNumber}`));
+
+      const karasekCell = document.createElement("td");
+      karasekCell.textContent = lot.karasekEntry ? formatRpsGollacFileCount(lot.karasekEntry.fileNames.length) : "—";
+
+      const copsoqCell = document.createElement("td");
+      copsoqCell.textContent = lot.copsoqEntry ? formatRpsGollacFileCount(lot.copsoqEntry.fileNames.length) : "—";
+
+      const buttonCell = document.createElement("td");
+      const isSelected = selectedLotNumber === lot.lotNumber;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "secondary-btn compact-action-btn";
+      button.textContent = isSelected ? "Afficher tous les lots" : `Afficher uniquement le lot ${lot.lotNumber}`;
+      const backgroundColor = isSelected ? RPS_GOLLAC_NO_SCORE_COLOR : lot.color;
+      // `.secondary-btn` définit `background` (un dégradé) en CSS : une simple `background-color`
+      // inline resterait invisible sous ce dégradé opaque, il faut donc écraser le raccourci
+      // `background` lui-même pour que la couleur du lot soit bien celle affichée.
+      button.style.background = backgroundColor;
+      button.style.borderColor = backgroundColor;
+      button.style.color = getContrastTextColor(backgroundColor);
+      button.addEventListener("click", () => onToggleLot(lot.lotNumber));
+      buttonCell.append(button);
+
+      row.append(labelCell, karasekCell, copsoqCell, buttonCell);
+      tbody.append(row);
+    });
+  }
+  table.append(tbody);
+  wrap.append(table);
   return wrap;
 }
 
 function buildRpsGollacGroupsFileDetails(entries, { showSwatch = true } = {}) {
   const wrap = document.createElement("div");
   wrap.className = "results-layout";
-  wrap.style.gridTemplateColumns = "1fr 1fr";
   const formatEntry = (entry) => `${entry.label} : ${entry.fileNames.join(", ")}`;
   wrap.append(
     buildRpsGollacGroupsListColumn(entries, "karasek", formatEntry, { showSwatch }),
@@ -4690,11 +5498,11 @@ function renderRpsGollacGroupsView() {
   contentRoot.innerHTML = "";
 
   const title = document.createElement("h2");
-  title.className = "content-title";
+  title.className = "content-title results-report-title";
   title.textContent = "Rapprochement RPS de groupes";
 
   const intro = document.createElement("article");
-  intro.className = "content-card";
+  intro.className = "content-card rps-intro-note";
   intro.innerHTML =
     "<p>Chaque ajout de fichiers Karasek-Siegrist ou COPSOQ Français crée un nouveau groupe (un « lot »), avec ses propres statistiques (moyenne, médiane, minimum, maximum). Le diagramme Sankey ci-dessous superpose par défaut tous les lots à la fois (nœuds partagés, un lien par lot coloré selon son repère). Cliquez sur le bouton d'un lot pour afficher uniquement son diagramme détaillé (liens colorés selon le lot, étiquettes/nœuds colorés selon le score) ; cliquez-le à nouveau pour revenir à la vue de tous les lots.</p>";
 
@@ -4723,14 +5531,21 @@ function renderRpsGollacGroupsView() {
   copsoqBtn.className = "secondary-btn";
   copsoqBtn.textContent = "Ajouter un groupe COPSOQ Français (plusieurs fichiers)";
 
-  actions.append(karasekBtn, copsoqBtn);
+  const resetBtn = document.createElement("button");
+  resetBtn.type = "button";
+  resetBtn.className = "secondary-btn";
+  resetBtn.textContent = "Réinitialiser les imports";
+  resetBtn.addEventListener("click", () => {
+    rpsGroupEntries = [];
+    selectedLotNumber = null;
+    refresh();
+  });
+
+  actions.append(karasekBtn, copsoqBtn, resetBtn, createGenerateReportButton("Rapprochement RPS de groupes", { compact: false }));
 
   const summaryHeading = document.createElement("h3");
   summaryHeading.textContent = "Fichiers chargés par lot";
   const summaryHost = document.createElement("div");
-
-  const lotButtonsHost = document.createElement("div");
-  lotButtonsHost.className = "questionnaire-actions";
 
   const resultsHeading = document.createElement("h3");
   resultsHeading.textContent = "Comparaison des groupes";
@@ -4776,32 +5591,20 @@ function renderRpsGollacGroupsView() {
   }
 
   function renderLotButtons() {
-    lotButtonsHost.innerHTML = "";
-    getRpsGollacGroupLots(rpsGroupEntries).forEach((lot) => {
-      const isSelected = selectedLotNumber === lot.lotNumber;
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "secondary-btn";
-      button.textContent = isSelected ? "Afficher tous les lots" : `Afficher uniquement le lot ${lot.lotNumber}`;
-      const backgroundColor = isSelected ? RPS_GOLLAC_NO_SCORE_COLOR : lot.color;
-      // `.secondary-btn` définit `background` (un dégradé) en CSS : une simple `background-color`
-      // inline resterait invisible sous ce dégradé opaque, il faut donc écraser le raccourci
-      // `background` lui-même pour que la couleur du lot soit bien celle affichée.
-      button.style.background = backgroundColor;
-      button.style.borderColor = backgroundColor;
-      button.style.color = getContrastTextColor(backgroundColor);
-      button.addEventListener("click", () => {
-        selectedLotNumber = isSelected ? null : lot.lotNumber;
+    // Boutons de bascule par lot désormais rendus dans la dernière colonne (sans en-tête) de la
+    // table "Fichiers chargés par lot" (cf. buildRpsGollacGroupsFilesTable) plutôt que dans une
+    // rangée de boutons séparée — cette fonction ne fait plus que rafraîchir cette table.
+    summaryHost.innerHTML = "";
+    summaryHost.append(
+      buildRpsGollacGroupsFilesTable(rpsGroupEntries, selectedLotNumber, (lotNumber) => {
+        selectedLotNumber = selectedLotNumber === lotNumber ? null : lotNumber;
         renderLotButtons();
         renderPlot();
-      });
-      lotButtonsHost.append(button);
-    });
+      }),
+    );
   }
 
   function refresh() {
-    summaryHost.innerHTML = "";
-    summaryHost.append(buildRpsGollacGroupsSummary(rpsGroupEntries));
     comparisonHost.innerHTML = "";
     comparisonHost.append(buildRpsGollacGroupsTable(rpsGroupEntries));
     detailsHost.innerHTML = "";
@@ -4879,12 +5682,11 @@ function renderRpsGollacGroupsView() {
     actions,
     summaryHeading,
     summaryHost,
-    lotButtonsHost,
     plotPanel,
-    resultsHeading,
-    comparisonHost,
     reportHeading,
     reportHost,
+    resultsHeading,
+    comparisonHost,
     detailsHeading,
     detailsHost,
     karasekInput,
@@ -4900,6 +5702,7 @@ function createHeaderNavIconLink(label, contentId, iconMarkup) {
   link.className = "header-icon-link";
   link.href = `#${contentId}`;
   link.setAttribute("aria-label", label);
+  link.title = label;
   link.innerHTML = iconMarkup;
   link.addEventListener("click", (event) => {
     event.preventDefault();
@@ -4938,6 +5741,7 @@ function renderHeaderExternalLinks() {
   githubLink.target = "_blank";
   githubLink.rel = "noopener noreferrer";
   githubLink.setAttribute("aria-label", "GitHub");
+  githubLink.title = "GitHub";
   const githubIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   githubIcon.setAttribute("viewBox", "0 0 16 16");
   githubIcon.setAttribute("width", "18");
@@ -4958,6 +5762,7 @@ function renderHeaderExternalLinks() {
   ccLink.target = "_blank";
   ccLink.rel = "noopener noreferrer";
   ccLink.setAttribute("aria-label", "Licence Creative Commons BY-NC-ND 4.0");
+  ccLink.title = "Licence Creative Commons BY-NC-ND 4.0";
   ["cc", "by", "nc", "nd"].forEach((iconName) => {
     const icon = document.createElement("img");
     icon.src = `https://mirrors.creativecommons.org/presskit/icons/${iconName}.svg`;
@@ -5198,11 +6003,13 @@ const i18n = {
     intro2: "Il n'y a pas de bonnes ou de mauvaises réponses : répondre de manière honnête et spontanée.",
     resultsTitle: "Résultats du Questionnaire COPSOQ",
     resultsDesc: "Voici un aperçu graphique de votre profil ainsi que les réponses détaillées par domaine et échelle :",
+    questionnaireResultsHeading: "Résultats du questionnaire",
     saveBtn: "Sauvegarder",
     resetBtn: "Réinitialiser le questionnaire",
     randomBtn: "Remplissage aléatoire",
     submitBtn: "Soumettre le questionnaire",
     saveResultsBtn: "Sauvegarder dans un fichier",
+    generateReportBtn: "Générer un rapport (Word)",
     answerPrefix: "Réponse :",
     alertCompleteBeforeSave: "Répondre à toutes les questions avant de sauvegarder le formulaire.",
     alertFormIncomplete: "Le formulaire est incomplet.",
@@ -5236,6 +6043,8 @@ const i18n = {
     fileHoverLabel: "Fichier",
     batchHoverLabel: "Lot",
     thScale: "Échelle",
+    thItem: "Item",
+    thDistribution: "Répartition",
     thBatch: "Lot",
     thMean: "Moyenne",
     thMedian: "Médiane",
@@ -5253,11 +6062,13 @@ const i18n = {
     intro2: "There are no right or wrong answers. Please answer honestly and spontaneously.",
     resultsTitle: "COPSOQ Questionnaire Results",
     resultsDesc: "Here is a graphical overview of your profile along with detailed answers by domain and scale:",
+    questionnaireResultsHeading: "Questionnaire results",
     saveBtn: "Save",
     resetBtn: "Reset the questionnaire",
     randomBtn: "Random Fill",
     submitBtn: "Submit the questionnaire",
     saveResultsBtn: "Save to file",
+    generateReportBtn: "Generate a report (Word)",
     answerPrefix: "Answer:",
     alertCompleteBeforeSave: "Please answer all questions before saving the form.",
     alertFormIncomplete: "The form is incomplete.",
@@ -5291,6 +6102,8 @@ const i18n = {
     fileHoverLabel: "File",
     batchHoverLabel: "Batch",
     thScale: "Scale",
+    thItem: "Item",
+    thDistribution: "Distribution",
     thBatch: "Batch",
     thMean: "Mean",
     thMedian: "Median",
@@ -5322,19 +6135,23 @@ function mountCopsoq(hostElement, lang) {
             <form id="copsocForm" class="questionnaire-form"></form>
             <div id="resultsSection" class="copsoq-results-section">
               <div class="content-title-row">
-                <h3 id="resultsTitle" class="content-title">Résultats du Questionnaire COPSOQ</h3>
+                <h3 id="resultsTitle" class="content-title results-report-title">Résultats du Questionnaire COPSOQ</h3>
                 <button type="button" id="resultsAddFilesButton" class="secondary-btn compact-action-btn" hidden>Ajouter des fichiers</button>
                 <button type="button" id="resultsResetButton" class="secondary-btn compact-action-btn" hidden>Réinitialiser les imports</button>
                 <button type="button" id="resultsSaveButton" class="secondary-btn compact-action-btn copsoq-results-save" hidden>Sauvegarder dans un fichier</button>
+                <button type="button" id="resultsReportButton" class="secondary-btn compact-action-btn report-btn" hidden>Générer un rapport (Word)</button>
               </div>
               <p id="resultsDesc">Voici un aperçu graphique de votre profil ainsi que les réponses détaillées par domaine et échelle :</p>
+              <p id="resultsCountText" class="content-subtitle" hidden></p>
+              <div id="copsoqLoadedFileInfo" hidden></div>
               <div class="results-layout copsoq-results-layout">
-                <div id="resultsContent" class="results-table-wrap copsoq-results-details"></div>
                 <section class="plot-panel copsoq-plots-panel">
                   <div id="myDiv" class="copsoq-chart-card" style="display:none"></div>
                   <div id="overallChartContainer" class="copsoq-chart-card" style="display:none"></div>
                 </section>
+                <div id="resultsContent" class="results-table-wrap copsoq-results-details"></div>
               </div>
+              <div id="copsoqActionsSection"></div>
               <div id="copsoqFilesSection" class="karasek-individual-files-section" hidden></div>
             </div>
           </section>
@@ -5345,6 +6162,9 @@ function mountCopsoq(hostElement, lang) {
     currentLang = resolveLang(lang || 'fr');
     currentQuestions = getQuestionSetForLang(currentLang);
     hostElement.querySelector('#resultsSaveButton').addEventListener('click', saveFormToFile);
+    hostElement.querySelector('#resultsReportButton').addEventListener('click', () => {
+      generateReportDocx(document.getElementById('resultsTitle').textContent, copsoqReportSourceTimestamp);
+    });
     selectLanguage(currentLang);
 }
 function tr() {
@@ -5364,6 +6184,7 @@ function syncCopsoqActionButtonLabels() {
     { id: 'randomButton', text: t.randomBtn },
     { id: 'submitButton', text: t.submitBtn },
     { id: 'resultsSaveButton', text: t.saveResultsBtn },
+    { id: 'resultsReportButton', text: t.generateReportBtn },
   ];
 
   labels.forEach(({ id, text }) => {
@@ -5410,6 +6231,18 @@ function selectLanguage(lang) {
   });
   const resultsContent = document.getElementById('resultsContent');
   if (resultsContent) resultsContent.innerHTML = '';
+  const resultsCountText = document.getElementById('resultsCountText');
+  if (resultsCountText) {
+    resultsCountText.hidden = true;
+    resultsCountText.textContent = '';
+  }
+  const copsoqActionsSection = document.getElementById('copsoqActionsSection');
+  if (copsoqActionsSection) copsoqActionsSection.innerHTML = '';
+  const loadedFileInfo = document.getElementById('copsoqLoadedFileInfo');
+  if (loadedFileInfo) {
+    loadedFileInfo.hidden = true;
+    loadedFileInfo.innerHTML = '';
+  }
   const copsoqFilesSection = document.getElementById('copsoqFilesSection');
   if (copsoqFilesSection) {
     copsoqFilesSection.hidden = true;
@@ -5672,10 +6505,28 @@ function ensureResultsVisible(titleText, descriptionText, showSaveButton = false
   if (intro) intro.hidden = true;
   const resultsSaveButton = document.getElementById('resultsSaveButton');
   if (resultsSaveButton) resultsSaveButton.hidden = !showSaveButton;
+  const resultsReportButton = document.getElementById('resultsReportButton');
+  if (resultsReportButton) resultsReportButton.hidden = false;
   const resultsResetButton = document.getElementById('resultsResetButton');
   if (resultsResetButton) resultsResetButton.hidden = true;
   const resultsAddFilesButton = document.getElementById('resultsAddFilesButton');
   if (resultsAddFilesButton) resultsAddFilesButton.hidden = true;
+  const resultsCountText = document.getElementById('resultsCountText');
+  if (resultsCountText) {
+    resultsCountText.hidden = true;
+    resultsCountText.textContent = '';
+  }
+  const loadedFileInfo = document.getElementById('copsoqLoadedFileInfo');
+  if (loadedFileInfo) {
+    loadedFileInfo.hidden = true;
+    loadedFileInfo.innerHTML = '';
+  }
+  copsoqReportSourceTimestamp = null;
+  const copsoqFilesSection = document.getElementById('copsoqFilesSection');
+  if (copsoqFilesSection) {
+    copsoqFilesSection.hidden = true;
+    copsoqFilesSection.innerHTML = '';
+  }
   form.style.display = 'none';
   const submitBtn = document.getElementById('submitButton');
   if (submitBtn) submitBtn.style.display = 'none';
@@ -5697,31 +6548,17 @@ function ensureResultsVisible(titleText, descriptionText, showSaveButton = false
     Plotly.Plots.resize(chartContainer);
   });
 }
-// Aligne la hauteur de resultsContent sur celle du panneau des graphiques Plotly affichés (1 ou 2 selon la vue).
-function syncCopsoqResultsContentHeight() {
-  const resultsContent = document.getElementById('resultsContent');
-  const plotsPanel = document.querySelector('.copsoq-plots-panel');
-  if (!resultsContent || !plotsPanel) return;
-  const panelHeight = plotsPanel.offsetHeight;
-  if (panelHeight > 0) {
-    // .copsoq-results-details a un max-height CSS fixe (min(78vh,840px)) qui plafonnerait sinon la
-    // hauteur imposée ci-dessous dès que le panneau des graphiques dépasse cette limite (ex. les 2
-    // graphiques empilés).
-    resultsContent.style.maxHeight = `${panelHeight}px`;
-    resultsContent.style.height = `${panelHeight}px`;
-  }
-}
 // Applique un résultat COPSOQ (fichier unique) déjà chargé, réutilisé pour le rendu initial comme
 // pour réafficher un import précédent sans rouvrir le sélecteur de fichier.
 // La langue est désormais fixée par l'élément de menu (ensureCopsoqLanguage) : on affiche le
 // résultat tel quel, sans jamais changer currentLang ici (voir loadSingleFormFile pour le rejet
 // des fichiers dont la langue ne correspond pas à l'élément de menu sélectionné).
 function applyCopsoqSingleResult(data) {
-  displayLoadedSingleFileResults(data.answers, data.fileName);
   ensureResultsVisible();
+  copsoqReportSourceTimestamp = getFileNameTimestamp(data.fileName);
+  displayLoadedSingleFileResults(data.answers, data.fileName);
   showCopsoqResetImportsButton('single');
-  sunburstChart(data.answers);
-  syncCopsoqResultsContentHeight();
+  sunburstChart(data.answers, getFileNameTimestamp(data.fileName));
 }
 async function loadSingleFormFile(event) {
   const file = event.target.files && event.target.files[0];
@@ -5810,24 +6647,6 @@ function calculateMedian(values) {
 }
 function calculateMin(values) { return values.length ? Math.min(...values) : 0; }
 function calculateMax(values) { return values.length ? Math.max(...values) : 0; }
-function appendStatisticsRow(tbody, label, values, className) {
-  const row = document.createElement('tr');
-  row.className = className;
-  const labelCell = document.createElement('td');
-  labelCell.textContent = label;
-  row.appendChild(labelCell);
-  [calculateMean(values), calculateMedian(values), calculateMin(values), calculateMax(values)].forEach(value => {
-    const statCell = document.createElement('td');
-    statCell.className = 'copsoq-stat-bullet-cell';
-    const bullet = document.createElement('span');
-    bullet.className = 'copsoq-score-bullet';
-    bullet.style.backgroundColor = getScoreColor(value);
-    bullet.setAttribute('aria-hidden', 'true');
-    statCell.appendChild(bullet);
-    row.appendChild(statCell);
-  });
-  tbody.appendChild(row);
-}
 function getContrastTextColor(backgroundColor) {
   if (!backgroundColor || typeof backgroundColor !== 'string') return '#ffffff';
   const normalizedColor = backgroundColor.replace('#', '');
@@ -5867,15 +6686,118 @@ function buildDomainSummary(answers) {
   }
   return { groupedByDomaine, domainScores, scaleStatsByDomain };
 }
-function renderScaleIndicator(titleElement, echelle, score) {
-  const bullet = document.createElement('span');
-  bullet.className = 'scale-bullet';
-  bullet.style.backgroundColor = getScoreColor(score);
-  const label = document.createElement('span');
-  label.textContent = `${echelle}`;
-  titleElement.textContent = '';
-  titleElement.appendChild(bullet);
-  titleElement.appendChild(label);
+// Table Domaine/Échelle/Item (avec pastille colorée devant Domaine ET Échelle, comme
+// buildCopsoqActionsPrioritairesTable) remplaçant l'ancien rendu en divs (.domaine/.echelle/
+// .result-item) de "Résultats du Questionnaire COPSOQ" (import unique ET soumission directe) :
+// rend beaucoup mieux une fois converti en document Word (une table HTML se convertit fidèlement,
+// contrairement à des divs empilés). Retourne aussi domainScores ({total,count} par domaine), déjà
+// nécessaire pour renderOverallChart, pour éviter de reparcourir les réponses une seconde fois.
+// Ordre imposé des Domaines (au lieu de l'ordre naturel d'apparition, dépendant du mélange aléatoire
+// des questions) ; le jeu de questions anglais n'a que 5 domaines, structurellement différents des
+// 6 domaines français (pas d'équivalence 1:1) — ordre confirmé avec l'utilisateur : celui
+// d'apparition d'origine dans questionsEN.
+const COPSOQ_DOMAIN_ORDER_FR = ["Contraintes quantitatives", "Organisation et leadership", "Autonomie", "Vécu professionnel", "Relations horizontales", "Santé et Bien-être"];
+const COPSOQ_DOMAIN_ORDER_EN = ["Demands at work", "Work Organization and Job Contents", "Interpersonal Relations and Leadership", "Work–Individual Interface", "Social Capital"];
+function buildCopsoqSingleResultTable(data) {
+  const wrap = document.createElement("div");
+  wrap.className = "results-table-wrap";
+  const heading = document.createElement("p");
+  heading.className = "content-subtitle";
+  heading.textContent = tr().questionnaireResultsHeading;
+  wrap.append(heading);
+
+  const groupedByDomaine = {};
+  data.forEach((item) => {
+    if (!groupedByDomaine[item.domaine]) groupedByDomaine[item.domaine] = {};
+    if (!groupedByDomaine[item.domaine][item.echelle]) groupedByDomaine[item.domaine][item.echelle] = [];
+    groupedByDomaine[item.domaine][item.echelle].push(item);
+  });
+  const domainOrder = currentLang === "en" ? COPSOQ_DOMAIN_ORDER_EN : COPSOQ_DOMAIN_ORDER_FR;
+  const orderedDomains = Object.keys(groupedByDomaine).sort((a, b) => {
+    const indexA = domainOrder.indexOf(a);
+    const indexB = domainOrder.indexOf(b);
+    if (indexA === -1 && indexB === -1) return 0;
+    if (indexA === -1) return 1;
+    if (indexB === -1) return -1;
+    return indexA - indexB;
+  });
+
+  const rows = [];
+  const domainScores = {};
+  const domainAverageScores = {};
+  orderedDomains.forEach((domaine) => {
+    const echelles = Object.keys(groupedByDomaine[domaine]);
+    const scaleScores = [];
+    echelles.forEach((echelle, echelleIndex) => {
+      const items = groupedByDomaine[domaine][echelle];
+      const total = items.reduce((sum, item) => sum + getScoreForAnswer(item, item.answerIndex), 0);
+      const score = Math.round(total / items.length);
+      scaleScores.push(score);
+      rows.push({ domaine, echelle, score, items, isFirstOfDomaine: echelleIndex === 0, domaineRowSpan: echelles.length });
+    });
+    domainScores[domaine] = {
+      total: scaleScores.reduce((sum, value) => sum + value, 0),
+      count: scaleScores.length,
+    };
+    domainAverageScores[domaine] = scaleScores.length
+      ? Math.round(scaleScores.reduce((sum, value) => sum + value, 0) / scaleScores.length)
+      : 0;
+  });
+
+  const t = tr();
+  const answerPrefix = t.answerPrefix;
+  const table = document.createElement("table");
+  table.className = "results-table";
+  const thead = document.createElement("thead");
+  thead.innerHTML = `<tr><th>${t.thDomain}</th><th>${t.thScale}</th><th>${t.thItem}</th></tr>`;
+  const tbody = document.createElement("tbody");
+  rows.forEach((row) => {
+    const rowEl = document.createElement("tr");
+    if (row.isFirstOfDomaine) {
+      const domaineCell = document.createElement("td");
+      domaineCell.rowSpan = row.domaineRowSpan;
+      domaineCell.style.verticalAlign = "top";
+      const domaineBullet = document.createElement("span");
+      domaineBullet.className = "rps-score-pastille";
+      domaineBullet.style.color = getScoreColor(domainAverageScores[row.domaine]);
+      domaineBullet.textContent = RPS_BULLET_GLYPH;
+      const domaineLabel = document.createElement("span");
+      domaineLabel.textContent = ` ${row.domaine}`;
+      domaineCell.append(domaineBullet, domaineLabel);
+      rowEl.append(domaineCell);
+    }
+
+    const echelleCell = document.createElement("td");
+    echelleCell.style.verticalAlign = "top";
+    const echelleBullet = document.createElement("span");
+    echelleBullet.className = "rps-score-pastille";
+    echelleBullet.style.color = getScoreColor(row.score);
+    echelleBullet.textContent = RPS_BULLET_GLYPH;
+    const echelleLabel = document.createElement("span");
+    echelleLabel.textContent = ` ${row.echelle}`;
+    echelleCell.append(echelleBullet, echelleLabel);
+
+    const itemsCell = document.createElement("td");
+    const itemsList = document.createElement("ul");
+    itemsList.className = "rps-gollac-report-items";
+    row.items.forEach((item) => {
+      const li = document.createElement("li");
+      const bullet = document.createElement("span");
+      bullet.className = "rps-score-pastille";
+      bullet.style.color = getScoreColor(getScoreForAnswer(item, item.answerIndex));
+      bullet.textContent = RPS_BULLET_GLYPH;
+      const label = document.createElement("span");
+      label.textContent = ` ${item.question} — ${answerPrefix} ${item.answer}`;
+      li.append(bullet, label);
+      itemsList.append(li);
+    });
+    itemsCell.append(itemsList);
+    rowEl.append(echelleCell, itemsCell);
+    tbody.append(rowEl);
+  });
+  table.append(thead, tbody);
+  wrap.append(table);
+  return { element: wrap, domainScores };
 }
 function appendCopsoqLoadedFileHeading(container, fileName) {
   if (!fileName) return;
@@ -5891,68 +6813,32 @@ function appendCopsoqLoadedFileHeading(container, fileName) {
 function displayLoadedSingleFileResults(data, fileName) {
   const resultsContent = document.getElementById('resultsContent');
   resultsContent.innerHTML = '';
-  appendCopsoqLoadedFileHeading(resultsContent, fileName);
-  const groupedByDomaine = {};
-  data.forEach(item => {
-    if (!groupedByDomaine[item.domaine]) groupedByDomaine[item.domaine] = {};
-    if (!groupedByDomaine[item.domaine][item.echelle]) groupedByDomaine[item.domaine][item.echelle] = [];
-    groupedByDomaine[item.domaine][item.echelle].push(item);
-  });
-  const domainScores = {};
-  for (const domaine in groupedByDomaine) {
-    const domaineDiv = document.createElement('div');
-    domaineDiv.className = 'domaine';
-    const domaineTitle = document.createElement('div');
-    domaineTitle.className = 'domaine-title';
-    domaineTitle.textContent = domaine;
-    domaineDiv.appendChild(domaineTitle);
-    for (const echelle in groupedByDomaine[domaine]) {
-      const echelleDiv = document.createElement('div');
-      echelleDiv.className = 'echelle';
-      const echelleTitle = document.createElement('div');
-      echelleTitle.className = 'echelle-title';
-      echelleTitle.textContent = echelle;
-      echelleDiv.appendChild(echelleTitle);
-      const items = groupedByDomaine[domaine][echelle];
-      const total = items.reduce((sum, item) => sum + getScoreForAnswer(item, item.answerIndex), 0);
-      const score = Math.round(total / items.length);
-      renderScaleIndicator(echelleTitle, echelle, score);
-      items.forEach(item => {
-        const itemDiv = document.createElement('div');
-        itemDiv.className = 'result-item';
-        const questionSpan = document.createElement('div');
-        questionSpan.className = 'result-question';
-        questionSpan.textContent = item.question;
-        const answerSpan = document.createElement('div');
-        answerSpan.className = 'result-answer';
-        answerSpan.textContent = `${tr().answerPrefix} ${item.answer}`;
-        itemDiv.appendChild(questionSpan);
-        itemDiv.appendChild(answerSpan);
-        echelleDiv.appendChild(itemDiv);
-      });
-      domaineDiv.appendChild(echelleDiv);
-    }
-    resultsContent.appendChild(domaineDiv);
-    const scaleScores = Object.keys(groupedByDomaine[domaine]).map(echelle => {
-      const items = groupedByDomaine[domaine][echelle];
-      const total = items.reduce((sum, item) => sum + getScoreForAnswer(item, item.answerIndex), 0);
-      return Math.round(total / items.length);
-    });
-    domainScores[domaine] = {
-      total: scaleScores.reduce((sum, value) => sum + value, 0),
-      count: scaleScores.length
-    };
+  const loadedFileInfo = document.getElementById('copsoqLoadedFileInfo');
+  if (loadedFileInfo) {
+    loadedFileInfo.innerHTML = '';
+    appendCopsoqLoadedFileHeading(loadedFileInfo, fileName);
+    loadedFileInfo.hidden = false;
   }
-  resultsContent.appendChild(buildCopsoqActionsPrioritairesSection([{ answers: data }], currentLang));
-  renderOverallChart(domainScores);
+  const { element, domainScores } = buildCopsoqSingleResultTable(data);
+  resultsContent.appendChild(element);
+  const actionsSection = document.getElementById('copsoqActionsSection');
+  if (actionsSection) {
+    actionsSection.innerHTML = '';
+    actionsSection.appendChild(buildCopsoqActionsPrioritairesSection([{ answers: data }], currentLang));
+  }
+  renderOverallChart(domainScores, undefined, getFileNameTimestamp(fileName));
 }
 function buildCopsoqAggregateStatistics(loadedFiles) {
+  const domainValues = {};
   const scaleValuesByDomain = {};
   const questionValuesByDomain = {};
   loadedFiles.forEach(loadedFile => {
     const fileAnswers = loadedFile.answers || loadedFile;
     const summary = buildDomainSummary(fileAnswers);
     for (const domaine in summary.domainScores) {
+      if (!domainValues[domaine]) domainValues[domaine] = [];
+      const { total, count } = summary.domainScores[domaine];
+      domainValues[domaine].push(count ? Math.round(total / count) : 0);
       if (!scaleValuesByDomain[domaine]) scaleValuesByDomain[domaine] = {};
       if (!questionValuesByDomain[domaine]) questionValuesByDomain[domaine] = {};
       for (const echelle in summary.scaleStatsByDomain[domaine]) {
@@ -5968,7 +6854,7 @@ function buildCopsoqAggregateStatistics(loadedFiles) {
       }
     }
   });
-  return { scaleValuesByDomain, questionValuesByDomain };
+  return { domainValues, scaleValuesByDomain, questionValuesByDomain };
 }
 function getCopsoqDomainLabels(loadedFiles) {
   const labels = [];
@@ -6002,89 +6888,150 @@ function getCopsoqFileColor(fileIndex) {
   return plotLineColors[fileIndex % plotLineColors.length];
 }
 function getCopsoqBatchColor(batchIndex) {
-  return plotLineColors[batchIndex % plotLineColors.length];
+  // Même palette/formule que getCopsoqFileColor : fonction distincte pour la clarté sémantique des
+  // appels (fichier individuel vs lot), pas pour une différence de logique.
+  return getCopsoqFileColor(batchIndex);
 }
 function buildCopsoqGroupLineSwatch(color) {
   const lineSwatch = document.createElement('span');
   lineSwatch.className = 'copsoq-group-line-swatch';
   lineSwatch.style.backgroundColor = color;
   lineSwatch.setAttribute('aria-hidden', 'true');
+  lineSwatch.textContent = '\u00A0';
   return lineSwatch;
 }
-function appendCopsoqStatisticsSection(container, loadedFiles, titleText) {
-  const section = document.createElement('section');
-  section.className = 'polar-statistics-section copsoq-statistics-section';
-  const count = document.createElement('p');
-  count.className = 'content-subtitle';
-  count.textContent = tr().fileCount(loadedFiles.length);
-  section.append(count);
-  const { scaleValuesByDomain, questionValuesByDomain } = buildCopsoqAggregateStatistics(loadedFiles);
-  for (const domaine in scaleValuesByDomain) {
-    const domainCard = document.createElement('div');
-    domainCard.className = 'domaine';
-    const domainTitle = document.createElement('div');
-    domainTitle.className = 'domaine-title';
-    domainTitle.textContent = domaine;
-    domainCard.appendChild(domainTitle);
-    const table = document.createElement('table');
-    table.className = 'summary-table';
-    const thead = document.createElement('thead');
-    const headRow = document.createElement('tr');
-    [tr().thScale, tr().thMean, tr().thMedian, tr().thMin, tr().thMax].forEach(text => {
-      const th = document.createElement('th');
-      th.textContent = text;
-      headRow.appendChild(th);
-    });
-    thead.appendChild(headRow);
-    table.appendChild(thead);
-    const tbody = document.createElement('tbody');
-    for (const echelle in scaleValuesByDomain[domaine]) {
-      appendStatisticsRow(tbody, echelle, scaleValuesByDomain[domaine][echelle], 'summary-scale-row');
-      for (const question in questionValuesByDomain[domaine][echelle]) {
-        appendStatisticsRow(
-          tbody,
-          question,
-          questionValuesByDomain[domaine][echelle][question],
-          'summary-question-row'
-        );
-      }
-    }
-    table.appendChild(tbody);
-    domainCard.appendChild(table);
-    section.appendChild(domainCard);
-  }
-  container.appendChild(section);
+// Compte, pour un ensemble de scores (0-100), combien tombent dans chacune des 4 zones de la
+// même échelle de couleurs que getScoreColor (rouge/orange/jaune/vert) — sert à la colonne
+// "Répartition" (cf. buildCopsoqRepartitionCell), qui affiche le nombre d'occurrences par zone
+// plutôt qu'une seule pastille de couleur (qui ne renseigne que sur la moyenne).
+function countCopsoqScoreDistribution(values) {
+  const counts = [0, 0, 0, 0];
+  values.forEach(value => {
+    if (value <= 20) counts[0] += 1;
+    else if (value <= 50) counts[1] += 1;
+    else if (value < 80) counts[2] += 1;
+    else counts[3] += 1;
+  });
+  return counts;
 }
-function appendCopsoqGroupStatisticsRow(tbody, label, batchValues, className) {
-  batchValues.forEach((batch, batchIndex) => {
-    const row = document.createElement('tr');
-    row.className = className;
-    if (batchIndex === 0) {
-      const labelCell = document.createElement('td');
-      labelCell.rowSpan = batchValues.length;
-      labelCell.textContent = label;
-      row.appendChild(labelCell);
-    }
-    const batchCell = document.createElement('td');
-    batchCell.className = 'copsoq-group-batch-cell';
-    const batchLabel = document.createElement('span');
-    batchLabel.textContent = batch.label;
-    batchCell.append(buildCopsoqGroupLineSwatch(batch.color), batchLabel);
-    row.appendChild(batchCell);
-    [calculateMean, calculateMedian, calculateMin, calculateMax].forEach(calculateStatistic => {
-      const statistic = batch.values.length ? calculateStatistic(batch.values) : null;
-      const statCell = document.createElement('td');
-      statCell.className = 'copsoq-group-stat-cell';
-      const bullet = document.createElement('span');
-      bullet.className = 'copsoq-score-bullet';
-      bullet.style.backgroundColor = statistic === null ? '#d9e4ea' : getScoreColor(statistic);
-      bullet.setAttribute('aria-hidden', 'true');
-      statCell.appendChild(bullet);
-      row.appendChild(statCell);
-    });
-    tbody.appendChild(row);
+function buildCopsoqRepartitionCell(values) {
+  const wrap = document.createElement('div');
+  wrap.className = 'copsoq-repartition-wrap';
+  const colors = ['#D55E00', '#E69F00', '#F0E442', '#009E73'];
+  countCopsoqScoreDistribution(values).forEach((count, index) => {
+    wrap.append(createCopsoqRepartitionBullet(count, colors[index]));
+  });
+  return wrap;
+}
+// Colonnes Répartition/Moyenne/Médiane/Minimum/Maximum, communes aux 3 niveaux de ligne de la
+// table de statistiques COPSOQ multi-individuelle (cf. appendCopsoqStatisticsSection). Un tableau
+// de valeurs vide (ex. un lot qui ne couvre pas tel Domaine/Échelle/Item, cf. la vue de groupes)
+// affiche une pastille grise neutre plutôt qu'un score à 0 trompeur.
+function appendCopsoqValueCells(row, values) {
+  const repartitionCell = document.createElement('td');
+  repartitionCell.className = 'copsoq-repartition-cell';
+  repartitionCell.appendChild(buildCopsoqRepartitionCell(values));
+  row.appendChild(repartitionCell);
+  [calculateMean, calculateMedian, calculateMin, calculateMax].forEach(calculateStatistic => {
+    const statCell = document.createElement('td');
+    statCell.className = 'copsoq-stat-bullet-cell';
+    const bullet = document.createElement('span');
+    bullet.className = 'copsoq-score-bullet';
+    bullet.style.color = values.length ? getScoreColor(calculateStatistic(values)) : '#d9e4ea';
+    bullet.setAttribute('aria-hidden', 'true');
+    bullet.textContent = RPS_BULLET_GLYPH;
+    statCell.appendChild(bullet);
+    row.appendChild(statCell);
   });
 }
+function appendCopsoqStatisticsSection(container, loadedFiles) {
+  const section = document.createElement('section');
+  section.className = 'polar-statistics-section copsoq-statistics-section';
+  const { domainValues, scaleValuesByDomain, questionValuesByDomain } = buildCopsoqAggregateStatistics(loadedFiles);
+  const tableWrap = document.createElement('div');
+  tableWrap.className = 'results-table-wrap';
+  const table = document.createElement('table');
+  table.className = 'summary-table copsoq-summary-table';
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  [tr().thDomain, tr().thScale, tr().thItem, tr().thDistribution, tr().thMean, tr().thMedian, tr().thMin, tr().thMax].forEach(text => {
+    const th = document.createElement('th');
+    th.textContent = text;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  for (const domaine in scaleValuesByDomain) {
+    const echelles = scaleValuesByDomain[domaine];
+    // La cellule Domaine fusionne (rowSpan) sa propre ligne de statistiques ET toutes les lignes
+    // Échelle/Item qui suivent en dessous ; idem pour la cellule Échelle sur sa propre ligne et ses
+    // lignes Item.
+    const domainRowSpan = 1 + Object.keys(echelles).reduce(
+      (sum, echelle) => sum + 1 + Object.keys(questionValuesByDomain[domaine][echelle]).length,
+      0,
+    );
+    const domainRow = document.createElement('tr');
+    domainRow.className = 'copsoq-multi-domain-row';
+    const domainCell = document.createElement('td');
+    domainCell.className = 'copsoq-multi-domain-cell';
+    domainCell.rowSpan = domainRowSpan;
+    domainCell.textContent = domaine;
+    const domainEchelleFill = document.createElement('td');
+    domainEchelleFill.className = 'copsoq-multi-domain-fill';
+    const domainItemFill = document.createElement('td');
+    domainItemFill.className = 'copsoq-multi-domain-fill';
+    domainRow.append(domainCell, domainEchelleFill, domainItemFill);
+    appendCopsoqValueCells(domainRow, domainValues[domaine]);
+    tbody.appendChild(domainRow);
+
+    for (const echelle in echelles) {
+      const questions = questionValuesByDomain[domaine][echelle];
+      const echelleRowSpan = 1 + Object.keys(questions).length;
+      const echelleRow = document.createElement('tr');
+      echelleRow.className = 'copsoq-multi-scale-row';
+      const echelleCell = document.createElement('td');
+      echelleCell.className = 'copsoq-multi-scale-cell';
+      echelleCell.rowSpan = echelleRowSpan;
+      echelleCell.textContent = echelle;
+      const echelleItemFill = document.createElement('td');
+      echelleItemFill.className = 'copsoq-multi-scale-fill';
+      echelleRow.append(echelleCell, echelleItemFill);
+      appendCopsoqValueCells(echelleRow, echelles[echelle]);
+      tbody.appendChild(echelleRow);
+
+      for (const question in questions) {
+        const itemRow = document.createElement('tr');
+        itemRow.className = 'copsoq-multi-question-row';
+        const itemCell = document.createElement('td');
+        itemCell.className = 'copsoq-multi-question-cell';
+        itemCell.textContent = question;
+        itemRow.appendChild(itemCell);
+        appendCopsoqValueCells(itemRow, questions[question]);
+        tbody.appendChild(itemRow);
+      }
+    }
+  }
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  section.appendChild(tableWrap);
+  container.appendChild(section);
+}
+// Cellule "Lot" (pastille de couleur + libellé du lot), commune aux 3 niveaux de ligne de la table
+// de statistiques COPSOQ de groupes (cf. appendCopsoqGroupStatisticsSection).
+function appendCopsoqGroupBatchCell(row, batch) {
+  const batchCell = document.createElement('td');
+  batchCell.className = 'copsoq-group-batch-cell';
+  const batchLabel = document.createElement('span');
+  batchLabel.textContent = batch.label;
+  batchCell.append(buildCopsoqGroupLineSwatch(batch.color), batchLabel);
+  row.appendChild(batchCell);
+}
+// Même table que "Résultats COPSOQ multi-individuels" (cf. appendCopsoqStatisticsSection :
+// Domaine/Échelle/Item fusionnés par rowSpan, colonne Répartition, mêmes classes CSS), avec une
+// colonne "Lot" supplémentaire : chaque niveau (Domaine/Échelle/Item) est décliné sur autant de
+// lignes que de lots chargés, chacune statistiquement indépendante (un lot peut ne pas couvrir un
+// Domaine/Échelle/Item donné, d'où le repli sur un tableau vide -> pastille grise neutre).
 function appendCopsoqGroupStatisticsSection(container, groupBatches) {
   const section = document.createElement('section');
   section.className = 'polar-statistics-section copsoq-statistics-section copsoq-group-statistics-section';
@@ -6095,17 +7042,24 @@ function appendCopsoqGroupStatisticsSection(container, groupBatches) {
   const batchSummaries = groupBatches.map((batch, batchIndex) => ({
     label: batch.label,
     color: getCopsoqBatchColor(batchIndex),
-    individuals: batch.individuals,
     statistics: buildCopsoqAggregateStatistics(batch.individuals),
   }));
+  const numBatches = batchSummaries.length;
+
+  const domainNames = [];
+  batchSummaries.forEach(batch => {
+    Object.keys(batch.statistics.scaleValuesByDomain).forEach(domain => {
+      if (!domainNames.includes(domain)) domainNames.push(domain);
+    });
+  });
 
   const tableWrap = document.createElement('div');
-  tableWrap.className = 'copsoq-group-summary-table-wrap';
+  tableWrap.className = 'results-table-wrap';
   const table = document.createElement('table');
-  table.className = 'summary-table copsoq-group-summary-table';
+  table.className = 'summary-table copsoq-summary-table';
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
-  [tr().thScale, tr().thBatch, tr().thMean, tr().thMedian, tr().thMin, tr().thMax].forEach(text => {
+  [tr().thDomain, tr().thScale, tr().thItem, tr().thBatch, tr().thDistribution, tr().thMean, tr().thMedian, tr().thMin, tr().thMax].forEach(text => {
     const th = document.createElement('th');
     th.textContent = text;
     headRow.appendChild(th);
@@ -6113,55 +7067,82 @@ function appendCopsoqGroupStatisticsSection(container, groupBatches) {
   thead.appendChild(headRow);
   table.appendChild(thead);
   const tbody = document.createElement('tbody');
-  const domainNames = [];
-  batchSummaries.forEach(batch => {
-    Object.keys(batch.statistics.scaleValuesByDomain).forEach(domain => {
-      if (!domainNames.includes(domain)) domainNames.push(domain);
-    });
-  });
+
   domainNames.forEach(domain => {
-    const domainRow = document.createElement('tr');
-    domainRow.className = 'copsoq-group-domain-row';
-    const domainCell = document.createElement('th');
-    domainCell.colSpan = 6;
-    domainCell.scope = 'rowgroup';
-    domainCell.textContent = domain;
-    domainRow.appendChild(domainCell);
-    tbody.appendChild(domainRow);
     const scaleNames = [];
     batchSummaries.forEach(batch => {
       Object.keys(batch.statistics.scaleValuesByDomain[domain] || {}).forEach(scale => {
         if (!scaleNames.includes(scale)) scaleNames.push(scale);
       });
     });
+    const questionNamesByScale = {};
     scaleNames.forEach(scale => {
-      appendCopsoqGroupStatisticsRow(
-        tbody,
-        scale,
-        batchSummaries.map(batch => ({
-          label: batch.label,
-          color: batch.color,
-          values: batch.statistics.scaleValuesByDomain[domain]?.[scale] || [],
-        })),
-        'summary-scale-row',
-      );
       const questionNames = [];
       batchSummaries.forEach(batch => {
         Object.keys(batch.statistics.questionValuesByDomain[domain]?.[scale] || {}).forEach(question => {
           if (!questionNames.includes(question)) questionNames.push(question);
         });
       });
+      questionNamesByScale[scale] = questionNames;
+    });
+    const domainRowSpan = numBatches * (
+      1 + scaleNames.reduce((sum, scale) => sum + 1 + questionNamesByScale[scale].length, 0)
+    );
+
+    batchSummaries.forEach((batch, batchIndex) => {
+      const row = document.createElement('tr');
+      row.className = 'copsoq-multi-domain-row';
+      if (batchIndex === 0) {
+        const domainCell = document.createElement('td');
+        domainCell.className = 'copsoq-multi-domain-cell';
+        domainCell.rowSpan = domainRowSpan;
+        domainCell.textContent = domain;
+        row.appendChild(domainCell);
+      }
+      row.append(
+        Object.assign(document.createElement('td'), { className: 'copsoq-multi-domain-fill' }),
+        Object.assign(document.createElement('td'), { className: 'copsoq-multi-domain-fill' }),
+      );
+      appendCopsoqGroupBatchCell(row, batch);
+      appendCopsoqValueCells(row, batch.statistics.domainValues[domain] || []);
+      tbody.appendChild(row);
+    });
+
+    scaleNames.forEach(scale => {
+      const questionNames = questionNamesByScale[scale];
+      const echelleRowSpan = numBatches * (1 + questionNames.length);
+
+      batchSummaries.forEach((batch, batchIndex) => {
+        const row = document.createElement('tr');
+        row.className = 'copsoq-multi-scale-row';
+        if (batchIndex === 0) {
+          const echelleCell = document.createElement('td');
+          echelleCell.className = 'copsoq-multi-scale-cell';
+          echelleCell.rowSpan = echelleRowSpan;
+          echelleCell.textContent = scale;
+          row.appendChild(echelleCell);
+        }
+        row.appendChild(Object.assign(document.createElement('td'), { className: 'copsoq-multi-scale-fill' }));
+        appendCopsoqGroupBatchCell(row, batch);
+        appendCopsoqValueCells(row, batch.statistics.scaleValuesByDomain[domain]?.[scale] || []);
+        tbody.appendChild(row);
+      });
+
       questionNames.forEach(question => {
-        appendCopsoqGroupStatisticsRow(
-          tbody,
-          question,
-          batchSummaries.map(batch => ({
-            label: batch.label,
-            color: batch.color,
-            values: batch.statistics.questionValuesByDomain[domain]?.[scale]?.[question] || [],
-          })),
-          'summary-question-row',
-        );
+        batchSummaries.forEach((batch, batchIndex) => {
+          const row = document.createElement('tr');
+          row.className = 'copsoq-multi-question-row';
+          if (batchIndex === 0) {
+            const itemCell = document.createElement('td');
+            itemCell.className = 'copsoq-multi-question-cell';
+            itemCell.rowSpan = numBatches;
+            itemCell.textContent = question;
+            row.appendChild(itemCell);
+          }
+          appendCopsoqGroupBatchCell(row, batch);
+          appendCopsoqValueCells(row, batch.statistics.questionValuesByDomain[domain]?.[scale]?.[question] || []);
+          tbody.appendChild(row);
+        });
       });
     });
   });
@@ -6220,6 +7201,7 @@ function buildCopsoqIndividualsFileListSection(loadedFiles) {
     lineSwatch.className = 'copsoq-individual-line-swatch';
     lineSwatch.style.backgroundColor = getCopsoqFileColor(fileIndex);
     lineSwatch.setAttribute('aria-hidden', 'true');
+    lineSwatch.textContent = '\u00A0';
     const name = document.createElement('span');
     name.textContent = loadedFile.fileName || tr().fileFallback(fileIndex + 1);
     item.append(lineSwatch, name);
@@ -6262,14 +7244,22 @@ function renderCopsoqIndividualsView(loadedFiles) {
   const resultsContent = document.getElementById('resultsContent');
   if (!resultsContent) return;
   resultsContent.innerHTML = '';
+  ensureResultsVisible(tr().individualsResultsTitle, tr().individualsResultsDesc);
+  const countText = document.getElementById('resultsCountText');
+  if (countText) {
+    countText.textContent = tr().fileCount(loadedFiles.length);
+    countText.hidden = false;
+  }
   appendCopsoqStatisticsSection(resultsContent, loadedFiles);
-  resultsContent.appendChild(buildCopsoqActionsPrioritairesSection(loadedFiles, currentLang));
+  const actionsSection = document.getElementById('copsoqActionsSection');
+  if (actionsSection) {
+    actionsSection.innerHTML = '';
+    actionsSection.appendChild(buildCopsoqActionsPrioritairesSection(loadedFiles, currentLang));
+  }
   const labels = getCopsoqDomainLabels(loadedFiles);
   const datasets = loadedFiles.map((loadedFile, fileIndex) =>
     buildCopsoqFileDataset(loadedFile, fileIndex, labels),
   );
-  clearSunburstChart();
-  ensureResultsVisible(tr().individualsResultsTitle, tr().individualsResultsDesc);
   showCopsoqResetImportsButton('individuals');
   const filesSection = document.getElementById('copsoqFilesSection');
   if (filesSection) {
@@ -6277,6 +7267,7 @@ function renderCopsoqIndividualsView(loadedFiles) {
     filesSection.appendChild(buildCopsoqIndividualsFileListSection(loadedFiles));
     filesSection.hidden = false;
   }
+  renderCopsoqConsolidatedSunburst(loadedFiles);
   renderOverallChart(labels, datasets);
 }
 function renderCopsoqGroupView(groupBatches) {
@@ -6284,9 +7275,20 @@ function renderCopsoqGroupView(groupBatches) {
   const resultsContent = document.getElementById('resultsContent');
   if (!resultsContent) return;
   resultsContent.innerHTML = '';
+  clearSunburstChart();
+  ensureResultsVisible(tr().groupsResultsTitle, tr().groupsResultsDesc);
+  const allFiles = groupBatches.flatMap((batch) => batch.individuals);
+  const countText = document.getElementById('resultsCountText');
+  if (countText) {
+    countText.textContent = tr().fileCount(allFiles.length);
+    countText.hidden = false;
+  }
   appendCopsoqGroupStatisticsSection(resultsContent, groupBatches);
-  resultsContent.appendChild(buildCopsoqActionsPrioritairesSection(groupBatches.flatMap((batch) => batch.individuals), currentLang));
-  const allFiles = groupBatches.flatMap(batch => batch.individuals);
+  const actionsSection = document.getElementById('copsoqActionsSection');
+  if (actionsSection) {
+    actionsSection.innerHTML = '';
+    actionsSection.appendChild(buildCopsoqActionsPrioritairesSection(allFiles, currentLang));
+  }
   const labels = getCopsoqDomainLabels(allFiles);
   const datasets = groupBatches.map((batch, batchIndex) => ({
     label: batch.label,
@@ -6301,8 +7303,6 @@ function renderCopsoqGroupView(groupBatches) {
       };
     }),
   }));
-  clearSunburstChart();
-  ensureResultsVisible(tr().groupsResultsTitle, tr().groupsResultsDesc);
   showCopsoqResetImportsButton('group');
   const filesSection = document.getElementById('copsoqFilesSection');
   if (filesSection) {
@@ -6311,7 +7311,6 @@ function renderCopsoqGroupView(groupBatches) {
     filesSection.hidden = false;
   }
   renderOverallChart(labels, datasets);
-  syncCopsoqResultsContentHeight();
 }
 function ensureCopsoqFullscreenBehavior(container) {
   if (!container || container.dataset.copsoqFullscreenBound === 'true') return;
@@ -6367,7 +7366,7 @@ function toggleCopsoqFullscreen(container) {
     document.exitFullscreen();
   }
 }
-function renderOverallChart(labelsOrDomainScores, datasets) {
+function renderOverallChart(labelsOrDomainScores, datasets, fileTimestamp) {
   const overallChartContainer = document.getElementById('overallChartContainer');
   ensureCopsoqFullscreenBehavior(overallChartContainer);
   overallChartContainer.style.display = 'block';
@@ -6461,12 +7460,13 @@ function renderOverallChart(labelsOrDomainScores, datasets) {
     font: { size: 16 }
   };
   const config = {
+    locale: currentLang === 'en' ? 'en' : 'fr',
     responsive: true,
     sendDataToCloud: false,
     displaylogo: false,
     toImageButtonOptions: {
       format: 'png',
-      filename: `copsoq_radar-${Date.now()}`,
+      filename: `copsoq_radar-${fileTimestamp || Date.now()}`,
       height: 1600,
       width: 1600,
       scale: 1
@@ -6482,7 +7482,7 @@ function renderOverallChart(labelsOrDomainScores, datasets) {
             .map(trace => ({ label: trace.name, color: trace.line.color, type: 'line' })),
           ...getCopsoqScoreExportLegendItems(),
         ],
-        filename: `copsoq_radar-${Date.now()}`,
+        filename: `copsoq_radar-${fileTimestamp || Date.now()}`,
         width: 1600,
         height: 1600,
       }),
@@ -6533,62 +7533,16 @@ function displayResults() {
       });
     }
   }
-  const groupedByDomaine = {};
-  answers.forEach(a => {
-    if (!groupedByDomaine[a.domaine]) groupedByDomaine[a.domaine] = {};
-    if (!groupedByDomaine[a.domaine][a.echelle]) groupedByDomaine[a.domaine][a.echelle] = [];
-    groupedByDomaine[a.domaine][a.echelle].push(a);
-  });
-  const domainScores = {};
-  for (const domaine in groupedByDomaine) {
-    const domaineDiv = document.createElement('div');
-    domaineDiv.className = 'domaine';
-    const domaineTitle = document.createElement('div');
-    domaineTitle.className = 'domaine-title';
-    domaineTitle.textContent = domaine;
-    domaineDiv.appendChild(domaineTitle);
-    for (const echelle in groupedByDomaine[domaine]) {
-      const echelleDiv = document.createElement('div');
-      echelleDiv.className = 'echelle';
-      const echelleTitle = document.createElement('div');
-      echelleTitle.className = 'echelle-title';
-      echelleTitle.textContent = echelle;
-      echelleDiv.appendChild(echelleTitle);
-      const items = groupedByDomaine[domaine][echelle];
-      const total = items.reduce((sum, item) => sum + getScoreForAnswer(item, item.answerIndex), 0);
-      const score = Math.round(total / items.length);
-      renderScaleIndicator(echelleTitle, echelle, score);
-      items.forEach(item => {
-        const itemDiv = document.createElement('div');
-        itemDiv.className = 'result-item';
-        const questionSpan = document.createElement('div');
-        questionSpan.className = 'result-question';
-        questionSpan.textContent = item.question;
-        const answerSpan = document.createElement('div');
-        answerSpan.className = 'result-answer';
-        answerSpan.textContent = `${tr().answerPrefix} ${item.answer}`;
-        itemDiv.appendChild(questionSpan);
-        itemDiv.appendChild(answerSpan);
-        echelleDiv.appendChild(itemDiv);
-      });
-      domaineDiv.appendChild(echelleDiv);
-    }
-    resultsContent.appendChild(domaineDiv);
-    const scaleScores = Object.keys(groupedByDomaine[domaine]).map(echelle => {
-      const items = groupedByDomaine[domaine][echelle];
-      const total = items.reduce((sum, item) => sum + getScoreForAnswer(item, item.answerIndex), 0);
-      return Math.round(total / items.length);
-    });
-    domainScores[domaine] = {
-      total: scaleScores.reduce((sum, value) => sum + value, 0),
-      count: scaleScores.length
-    };
+  const { element, domainScores } = buildCopsoqSingleResultTable(answers);
+  resultsContent.appendChild(element);
+  const actionsSection = document.getElementById('copsoqActionsSection');
+  if (actionsSection) {
+    actionsSection.innerHTML = '';
+    actionsSection.appendChild(buildCopsoqActionsPrioritairesSection([{ answers }], currentLang));
   }
-  resultsContent.appendChild(buildCopsoqActionsPrioritairesSection([{ answers }], currentLang));
   renderOverallChart(domainScores);
   ensureResultsVisible(undefined, undefined, true);
   sunburstChart();
-  syncCopsoqResultsContentHeight();
 }
 function submitForm() {
   const form = getCopsoqForm();
@@ -6640,13 +7594,7 @@ function clearSunburstChart() {
   sunburstContainer.innerHTML = '';
   sunburstContainer.style.display = 'none';
 }
-function sunburstChart(sourceAnswers) {
-  const sunburstContainer = document.getElementById('myDiv');
-  if (!sunburstContainer) return;
-  ensureCopsoqFullscreenBehavior(sunburstContainer);
-  sunburstContainer.style.width = '100%';
-  sunburstContainer.style.minHeight = '720px';
-  sunburstContainer.style.height = 'min(78vh, 840px)';
+function sunburstChart(sourceAnswers, fileTimestamp) {
   let answers = [];
   if (Array.isArray(sourceAnswers) && sourceAnswers.length > 0) {
     answers = sourceAnswers
@@ -6683,36 +7631,64 @@ function sunburstChart(sourceAnswers) {
     if (!grouped[item.domaine][item.echelle]) grouped[item.domaine][item.echelle] = [];
     grouped[item.domaine][item.echelle].push(item);
   });
+  const scaleScoresByDomain = {};
+  Object.keys(grouped).forEach(domain => {
+    scaleScoresByDomain[domain] = {};
+    Object.keys(grouped[domain]).forEach(scale => {
+      const items = grouped[domain][scale];
+      scaleScoresByDomain[domain][scale] = Math.round(
+        items.reduce((sum, item) => sum + getScoreForAnswer(item, item.answerIndex), 0) / items.length,
+      );
+    });
+  });
+  renderCopsoqSunburstFromScaleScores(scaleScoresByDomain, fileTimestamp);
+}
+// Même sunburst que sunburstChart, mais consolidé sur plusieurs fichiers (score moyen par
+// Domaine/Échelle à travers tous les fichiers chargés) — utilisé par "Résultats COPSOQ
+// multi-individuels" (cf. buildCopsoqAggregateStatistics, déjà utilisé par le tableau de synthèse).
+function renderCopsoqConsolidatedSunburst(loadedFiles, fileTimestamp) {
+  const { scaleValuesByDomain } = buildCopsoqAggregateStatistics(loadedFiles);
+  const scaleScoresByDomain = {};
+  Object.keys(scaleValuesByDomain).forEach((domain) => {
+    scaleScoresByDomain[domain] = {};
+    Object.keys(scaleValuesByDomain[domain]).forEach((scale) => {
+      const values = scaleValuesByDomain[domain][scale];
+      scaleScoresByDomain[domain][scale] = values.length
+        ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+        : 0;
+    });
+  });
+  renderCopsoqSunburstFromScaleScores(scaleScoresByDomain, fileTimestamp);
+}
+function renderCopsoqSunburstFromScaleScores(scaleScoresByDomain, fileTimestamp) {
+  const sunburstContainer = document.getElementById('myDiv');
+  if (!sunburstContainer) return;
+  ensureCopsoqFullscreenBehavior(sunburstContainer);
+  sunburstContainer.style.width = '100%';
+  sunburstContainer.style.minHeight = '720px';
+  sunburstContainer.style.height = 'min(78vh, 840px)';
   const labels = [];
   const parents = [];
   const values = [];
   const colors = [];
-  const domainScores = {};
-  Object.keys(grouped).forEach(domain => {
+  Object.keys(scaleScoresByDomain).forEach(domain => {
     const domainLabel = domain;
     const domainIndex = labels.length;
     labels.push(domainLabel);
     parents.push("");
     values.push(0);
     colors.push("#2f5874");
-    const scaleEntries = grouped[domain];
-    const scaleScores = [];
-    Object.keys(scaleEntries).forEach(scale => {
-      const items = scaleEntries[scale];
-      const score = Math.round(items.reduce((sum, item) => sum + getScoreForAnswer(item, item.answerIndex), 0) / items.length);
+    const scaleScores = Object.values(scaleScoresByDomain[domain]);
+    Object.keys(scaleScoresByDomain[domain]).forEach(scale => {
+      const score = scaleScoresByDomain[domain][scale];
       labels.push(scale);
       parents.push(domainLabel);
       values.push(score);
       colors.push(getScoreColor(score));
-      scaleScores.push(score);
     });
     const domainScore = scaleScores.length
       ? Math.round(scaleScores.reduce((sum, value) => sum + value, 0) / scaleScores.length)
       : 0;
-    domainScores[domain] = {
-      total: scaleScores.reduce((sum, value) => sum + value, 0),
-      count: scaleScores.length
-    };
     colors[domainIndex] = getScoreColor(domainScore);
   });
   const trace = {
@@ -6737,19 +7713,20 @@ function sunburstChart(sourceAnswers) {
     plot_bgcolor: 'rgba(255,255,255,1)',
     font: { size: 16 }
   }, {
+    locale: currentLang === 'en' ? 'en' : 'fr',
     responsive: true,
     sendDataToCloud: false,
     displaylogo: false,
     toImageButtonOptions: {
       format: 'png',
-      filename: `copsoq_sunburst-${Date.now()}`,
+      filename: `copsoq_sunburst-${fileTimestamp || Date.now()}`,
       scale: 1
     },
     modeBarButtonsToRemove: ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'autoScale2d', 'resetScale2d', 'toggleHover', 'toggleSpikelines', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toImage'],
     modeBarButtonsToAdd: [
       getPlotImageExportButton(sunburstContainer, {
         title: getCopsoqSunburstExportTitle(),
-        filename: `copsoq_sunburst-${Date.now()}`,
+        filename: `copsoq_sunburst-${fileTimestamp || Date.now()}`,
         width: 1600,
         height: 1600,
       }),
